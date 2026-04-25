@@ -1,7 +1,23 @@
- __pycache__/
+# Python cache
+__pycache__/
 *.pyc
-*.pyo
-*.pyd
-build/
-.env
+
+# Virtual environment
+venv/
+env/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Model weights (optional)
+*.pt
+
+# Temporary files
+*.tmp
