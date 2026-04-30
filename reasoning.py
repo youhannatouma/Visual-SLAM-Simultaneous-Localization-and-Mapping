@@ -1,102 +1,313 @@
+import csv
 import math
+import os
+import time
+
+import torch
+import torch.nn as nn
+
+LABEL_CLASSES = ["person", "chair", "table", "sofa", "tv", "other"]
+ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
+MOTION_CLASSES = ["NONE", "LEFT", "RIGHT", "UP", "DOWN"]
+NUM_OBJECT_SLOTS = 3
+
+
+class ReasoningModel(nn.Module):
+    def __init__(self, input_size):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_size, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, len(ACTION_CLASSES))
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
 
 class ReasoningEngine:
-    def __init__(self):
+    def __init__(self, model_path="models/reasoning_model.pt"):
         self.goal = "find_chair"
 
-        # memory + tracking
         self.memory = []
-        self.memory_size = 15
+        self.memory_size = 30
+        self.memory_ttl = 2.0
 
         self.tracked_objects = {}
         self.next_id = 0
 
         self.state = "EXPLORE"
+        self.last_decision = "Initializing..."
 
         self.priority = {
-            "person": 3,
-            "chair": 2,
-            "table": 1
+            "person": 6,
+            "chair": 5,
+            "table": 3,
+            "sofa": 2,
+            "tv": 1
         }
 
-    # -------------------------------
-    # TRACKING (simple centroid matching)
-    # -------------------------------
+        self.model_path = model_path
+        self.model = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.load_model()
+
+    def load_model(self):
+        if os.path.exists(self.model_path):
+            input_size = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2
+            self.model = ReasoningModel(input_size).to(self.device)
+            self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+            self.model.eval()
+        else:
+            self.model = None
+
+    @staticmethod
+    def label_to_onehot(label):
+        onehot = [0.0] * len(LABEL_CLASSES)
+        if label in LABEL_CLASSES:
+            onehot[LABEL_CLASSES.index(label)] = 1.0
+        else:
+            onehot[-1] = 1.0
+        return onehot
+
+    @staticmethod
+    def action_to_index(action_label):
+        return ACTION_CLASSES.index(action_label)
+
+    @staticmethod
+    def index_to_action(index):
+        return ACTION_CLASSES[index]
+
+    @staticmethod
+    def motion_to_onehot(motion_text):
+        motion = "NONE"
+        if motion_text and motion_text != "No movement":
+            text = motion_text.upper()
+            if "LEFT" in text:
+                motion = "LEFT"
+            elif "RIGHT" in text:
+                motion = "RIGHT"
+            elif "UP" in text:
+                motion = "UP"
+            elif "DOWN" in text:
+                motion = "DOWN"
+        onehot = [0.0] * len(MOTION_CLASSES)
+        onehot[MOTION_CLASSES.index(motion)] = 1.0
+        return onehot
+
     def track_objects(self, detections):
         updated = {}
+        used_ids = set()
 
         for det in detections:
             cx, cy = det["center"]
-
             matched_id = None
             min_dist = 999999
 
             for obj_id, obj in self.tracked_objects.items():
+                if obj_id in used_ids:
+                    continue
+
                 ox, oy = obj["center"]
                 dist = math.hypot(cx - ox, cy - oy)
 
-                if dist < 50 and dist < min_dist:
+                if dist < 60 and dist < min_dist:
                     min_dist = dist
                     matched_id = obj_id
 
             if matched_id is not None:
                 updated[matched_id] = det
+                used_ids.add(matched_id)
             else:
                 updated[self.next_id] = det
+                used_ids.add(self.next_id)
                 self.next_id += 1
 
         self.tracked_objects = updated
         return updated
 
-    # -------------------------------
-    # MEMORY
-    # -------------------------------
-    def update_memory(self, detections):
-        self.memory.extend(detections)
+    def update_memory(self, tracked):
+        now = time.time()
+        for obj in tracked.values():
+            self.memory.append({
+                "label": obj["label"],
+                "confidence": obj["confidence"],
+                "center": obj["center"],
+                "bbox": obj["bbox"],
+                "area": obj["area"],
+                "timestamp": now
+            })
 
-        if len(self.memory) > self.memory_size:
-            self.memory = self.memory[-self.memory_size:]
+        self.memory = [obj for obj in self.memory if now - obj["timestamp"] < self.memory_ttl]
+        self.memory = self.memory[-self.memory_size:]
 
-    # -------------------------------
-    # MAIN AI FUNCTION
-    # -------------------------------
-    def decide(self, detections):
-        tracked = self.track_objects(detections)
-        self.update_memory(list(tracked.values()))
+    def frame_direction(self, obj_center, frame_center):
+        dx = obj_center[0] - frame_center[0]
+        dy = obj_center[1] - frame_center[1]
+        if abs(dx) > abs(dy):
+            return "LEFT" if dx < 0 else "RIGHT"
+        return "UP" if dy < 0 else "DOWN"
 
-        best_label = None
+    def compute_score(self, obj, frame_center, frame_area):
+        label = obj["label"]
+        conf = obj["confidence"]
+        area_ratio = obj["area"] / frame_area
+
+        score = conf * 2.5
+        score += self.priority.get(label, 0) * 3
+        score += min(area_ratio, 0.4) * 12
+
+        if label == "chair":
+            dx = abs(obj["center"][0] - frame_center[0])
+            score += max(0, (frame_center[0] * 0.6 - dx) / frame_center[0]) * 4
+
+        if label == "person":
+            if area_ratio > 0.05:
+                score += 6
+            if abs(obj["center"][0] - frame_center[0]) < frame_center[0] * 0.3:
+                score += 3
+
+        return score
+
+    def choose_target(self, tracked, frame_center, frame_area):
+        person_threat = 0
+        nearest_person = None
+        best_target = None
         best_score = -1
 
-        for obj in self.memory:
+        for obj in tracked.values():
             label = obj["label"]
-            conf = obj["confidence"]
-            area_score = conf * 2
+            score = self.compute_score(obj, frame_center, frame_area)
 
-            priority = self.priority.get(label, 0)
+            if label == "person" and score > person_threat:
+                person_threat = score
+                nearest_person = obj
 
-            score = area_score + priority
-
-            if self.goal == "find_chair" and label == "chair":
-                score += 2
-
-            if score > best_score:
+            if label != "person" and score > best_score:
                 best_score = score
-                best_label = label
+                best_target = obj
 
-        # -------------------------------
-        # STATE MACHINE
-        # -------------------------------
-        if best_label == "person":
+        return nearest_person, person_threat, best_target
+
+    def object_score(self, det, frame_center, frame_area):
+        label = det["label"]
+        score = det["confidence"] + self.priority.get(label, 0) * 0.15 + (det["area"] / frame_area)
+        return score
+
+    def extract_features(self, detections, frame_center, frame_area, motion_text):
+        sorted_detections = sorted(detections, key=lambda det: self.object_score(det, frame_center, frame_area), reverse=True)
+        slot_features = []
+
+        for det in sorted_detections[:NUM_OBJECT_SLOTS]:
+            label_onehot = self.label_to_onehot(det["label"])
+            conf = det["confidence"]
+            area = det["area"] / frame_area
+            dx = (det["center"][0] - frame_center[0]) / frame_center[0]
+            dy = (det["center"][1] - frame_center[1]) / frame_center[1]
+            slot_features.extend(label_onehot + [conf, area, dx, dy])
+
+        while len(slot_features) < NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4):
+            slot_features.extend([0.0] * (len(LABEL_CLASSES) + 4))
+
+        motion_onehot = self.motion_to_onehot(motion_text)
+        motion_flag = 0.0 if motion_text == "No movement" or motion_text is None else 1.0
+        object_count = min(len(detections), NUM_OBJECT_SLOTS) / NUM_OBJECT_SLOTS
+
+        return slot_features + motion_onehot + [motion_flag, object_count]
+
+    def predict_action(self, features):
+        if self.model is None:
+            return None
+        with torch.no_grad():
+            tensor = torch.tensor(features, dtype=torch.float32, device=self.device).unsqueeze(0)
+            logits = self.model(tensor)
+            action_index = int(logits.argmax(dim=-1).item())
+            return self.index_to_action(action_index)
+
+    def format_action(self, action, tracked, frame_center, frame_area):
+        person = next((obj for obj in tracked.values() if obj["label"] == "person"), None)
+        chair = next((obj for obj in tracked.values() if obj["label"] == "chair"), None)
+        table = next((obj for obj in tracked.values() if obj["label"] == "table"), None)
+
+        if action == "AVOID_PERSON":
             self.state = "AVOID"
-            decision = "AVOID PERSON"
+            if person:
+                direction = self.frame_direction(person["center"], frame_center)
+                return f"AVOID PERSON ({direction})"
+            return "AVOID PERSON"
 
-        elif best_label == "chair":
+        if action == "MOVE_TO_CHAIR":
             self.state = "TARGET"
-            decision = "MOVE TO CHAIR"
+            if chair:
+                direction = self.frame_direction(chair["center"], frame_center)
+                if chair["area"] / frame_area > 0.08:
+                    return f"MOVE TO CHAIR ({direction})"
+                return f"TURN TOWARD CHAIR ({direction})"
+            return "MOVE TO CHAIR"
 
+        if action == "CHECK_TABLE":
+            self.state = "INVESTIGATE"
+            if table:
+                direction = self.frame_direction(table["center"], frame_center)
+                return f"CHECK TABLE ({direction})"
+            return "CHECK TABLE"
+
+        self.state = "EXPLORE"
+        return "EXPLORE AND SEARCH"
+
+    def log_example(self, detections, frame_center, frame_area, motion_text, action_label, output_path="data/reasoning_data.csv"):
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        features = self.extract_features(detections, frame_center, frame_area, motion_text)
+        row = features + [action_label]
+        header = [f"f{i}" for i in range(len(features))] + ["label"]
+
+        write_header = not os.path.exists(output_path)
+        with open(output_path, mode="a", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(csv_file)
+            if write_header:
+                writer.writerow(header)
+            writer.writerow(row)
+
+    def decide(self, detections, frame_center=(320, 240), frame_area=640 * 480, motion_text=None, use_model=True):
+        tracked = self.track_objects(detections)
+        self.update_memory(tracked)
+
+        if use_model and self.model is not None:
+            features = self.extract_features(detections, frame_center, frame_area, motion_text)
+            action = self.predict_action(features)
+            if action is not None:
+                self.last_decision = self.format_action(action, tracked, frame_center, frame_area)
+                return self.last_decision, tracked
+
+        nearest_person, person_threat, best_target = self.choose_target(tracked, frame_center, frame_area)
+
+        if nearest_person and person_threat > 8:
+            self.state = "AVOID"
+            direction = self.frame_direction(nearest_person["center"], frame_center)
+            self.last_decision = f"AVOID PERSON ({direction})"
+            return self.last_decision, tracked
+
+        if best_target and best_target["label"] == "chair":
+            self.state = "TARGET"
+            direction = self.frame_direction(best_target["center"], frame_center)
+            if best_target["area"] / frame_area > 0.08:
+                self.last_decision = f"MOVE TO CHAIR ({direction})"
+            else:
+                self.last_decision = f"TURN TOWARD CHAIR ({direction})"
+            return self.last_decision, tracked
+
+        if best_target and best_target["label"] == "table":
+            self.state = "INVESTIGATE"
+            direction = self.frame_direction(best_target["center"], frame_center)
+            self.last_decision = f"CHECK TABLE ({direction})"
+            return self.last_decision, tracked
+
+        self.state = "EXPLORE"
+        if motion_text and motion_text != "No movement":
+            self.last_decision = f"EXPLORE / {motion_text}"
         else:
-            self.state = "EXPLORE"
-            decision = "EXPLORE"
+            self.last_decision = "EXPLORE AND SEARCH"
 
-
-        return decision, self.tracked_objects
+        return self.last_decision, tracked

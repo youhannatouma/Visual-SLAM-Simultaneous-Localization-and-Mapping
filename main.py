@@ -17,6 +17,8 @@ prev_kp = None
 prev_des = None
 
 decision = "Initializing..."
+use_model = True
+label_message = ""
 
 # -------------------------------
 # MAIN LOOP
@@ -28,6 +30,8 @@ while True:
 
     frame = cv2.resize(frame, (640, 480))
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    frame_center = (frame.shape[1] // 2, frame.shape[0] // 2)
+    frame_area = frame.shape[0] * frame.shape[1]
 
     # -------------------------------
     # ORB FEATURE DETECTION
@@ -93,18 +97,20 @@ while True:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cx = int((x1 + x2) / 2)
             cy = int((y1 + y2) / 2)
+            area = max(0, x2 - x1) * max(0, y2 - y1)
 
             detections_list.append({
                 "label": label,
                 "confidence": conf,
                 "center": (cx, cy),
-                "bbox": (x1, y1, x2, y2)
+                "bbox": (x1, y1, x2, y2),
+                "area": area
             })
 
     # -------------------------------
     # AI DECISION + TRACKING
     # -------------------------------
-    decision, tracked_objects = engine.decide(detections_list)
+    decision, tracked_objects = engine.decide(detections_list, frame_center, frame_area, motion_text, use_model)
 
     # -------------------------------
     # DRAW YOLO BOXES
@@ -158,21 +164,57 @@ while True:
     # -------------------------------
     # UI TEXT
     # -------------------------------
-    cv2.putText(annotated_frame, decision, (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 1,
+    cv2.putText(annotated_frame, f"Decision: {decision}", (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                 (0, 0, 255), 2)
 
-    cv2.putText(annotated_frame, motion_text, (20, 80),
+    cv2.putText(annotated_frame, f"Motion: {motion_text}", (20, 80),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7,
                 (255, 0, 0), 2)
+
+    cv2.putText(annotated_frame, f"State: {engine.state}", (20, 115),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                (0, 255, 255), 2)
+
+    cv2.putText(annotated_frame, f"Goal: {engine.goal}", (20, 145),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                (0, 255, 255), 2)
+
+    cv2.putText(annotated_frame, f"Mode: {'MODEL' if use_model else 'RULE'}", (20, 180),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                (255, 255, 0), 2)
+
+    cv2.putText(annotated_frame, "Keys: a=AVOID c=CHAIR t=TABLE e=EXPLORE m=TOGGLE", (20, 210),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                (255, 255, 255), 1)
+
+    cv2.putText(annotated_frame, label_message, (20, 235),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                (0, 255, 0), 1)
 
     # -------------------------------
     # DISPLAY
     # -------------------------------
     cv2.imshow("AI Visual System", annotated_frame)
 
-    if cv2.waitKey(1) & 0xFF == 27:
+    key = cv2.waitKey(1) & 0xFF
+    if key == 27:
         break
+    if key == ord('m'):
+        use_model = not use_model
+        label_message = f"Model mode {'ON' if use_model else 'OFF'}"
+    elif key == ord('a'):
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "AVOID_PERSON")
+        label_message = "Saved label: AVOID_PERSON"
+    elif key == ord('c'):
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "MOVE_TO_CHAIR")
+        label_message = "Saved label: MOVE_TO_CHAIR"
+    elif key == ord('t'):
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "CHECK_TABLE")
+        label_message = "Saved label: CHECK_TABLE"
+    elif key == ord('e'):
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "EXPLORE")
+        label_message = "Saved label: EXPLORE"
 
 # -------------------------------
 # CLEANUP

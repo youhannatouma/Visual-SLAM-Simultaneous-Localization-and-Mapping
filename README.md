@@ -183,7 +183,29 @@ This project was developed for a **3rd-year AI course**, focusing on:
 
 ---
 
-## 📄 License
+## � Training the Reasoning Model
+
+This project now includes a learnable reasoning engine. The new workflow is:
+
+1. Run the app with `python main.py`.
+2. Use the keyboard to label examples while the camera is running:
+   * `a` → save `AVOID_PERSON`
+   * `c` → save `MOVE_TO_CHAIR`
+   * `t` → save `CHECK_TABLE`
+   * `e` → save `EXPLORE`
+3. Train the model from the logged data:
+
+```bash
+python train_reasoning.py --data data/reasoning_data.csv --model models/reasoning_model.pt
+```
+
+4. Restart `main.py`.
+
+The application will automatically load `models/reasoning_model.pt` if it exists and use the learned policy to choose decisions.
+
+---
+
+## �📄 License
 
 This project is for academic and educational use.
 
