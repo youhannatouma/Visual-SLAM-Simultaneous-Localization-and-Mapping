@@ -183,9 +183,9 @@ This project was developed for a **3rd-year AI course**, focusing on:
 
 ---
 
-## � Training the Reasoning Model
+## Training the Reasoning Model
 
-This project now includes a learnable reasoning engine. The new workflow is:
+This project includes a learnable reasoning engine with a pandas/numpy preprocessing workflow.
 
 1. Run the app with `python main.py`.
 2. Use the keyboard to label examples while the camera is running:
@@ -193,15 +193,53 @@ This project now includes a learnable reasoning engine. The new workflow is:
    * `c` → save `MOVE_TO_CHAIR`
    * `t` → save `CHECK_TABLE`
    * `e` → save `EXPLORE`
-3. Train the model from the logged data:
+3. Move or copy raw CSV logs to `data/raw/`.
+4. Prepare train/val/test splits:
 
 ```bash
-python train_reasoning.py --data data/reasoning_data.csv --model models/reasoning_model.pt
+python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --seed 42
 ```
 
-4. Restart `main.py`.
+5. Train the model:
 
-The application will automatically load `models/reasoning_model.pt` if it exists and use the learned policy to choose decisions.
+```bash
+python train_reasoning.py --train data/processed/train.csv --val data/processed/val.csv --test data/processed/test.csv --model models/reasoning_model.pt
+```
+
+6. Restart `main.py`.
+
+The app auto-loads `models/reasoning_model.pt` when present.
+
+### Local training guardrail
+
+If `train + val + test` has **50,000+ rows**, `train_reasoning.py` exits and asks you to train remotely (Colab/server), then copy the trained `.pt` back into `models/`.
+
+---
+
+## Build a High-Quality Reasoning Dataset
+
+Use this checklist before training:
+
+1. Collect diverse scenes with `main.py`:
+   * person close/centered and person off-center
+   * chair near/far and partially occluded
+   * table-focused scenes
+   * empty scenes for `EXPLORE`
+2. Keep labels balanced across all 4 actions (`a/c/t/e`) instead of over-logging one key.
+3. Save session CSVs in `data/raw/` (multiple files are supported).
+4. Audit quality first:
+
+```bash
+python scripts/audit_reasoning_data.py --input-glob "data/raw/*.csv" --min-per-class 50 --max-class-imbalance-ratio 2.0 --report reports/dataset_audit.json
+```
+
+5. Prepare processed splits with a quality gate:
+
+```bash
+python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --min-per-class 50 --seed 42
+```
+
+If any class is below `--min-per-class`, preprocessing fails and tells you which labels need more data.
 
 ---
 
