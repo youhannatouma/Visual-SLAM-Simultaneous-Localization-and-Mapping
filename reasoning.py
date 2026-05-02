@@ -257,7 +257,7 @@ class ReasoningEngine:
         self.state = "EXPLORE"
         return "EXPLORE AND SEARCH"
 
-    def log_example(self, detections, frame_center, frame_area, motion_text, action_label, output_path="data/reasoning_data.csv"):
+    def log_example(self, detections, frame_center, frame_area, motion_text, action_label, output_path="data/raw/reasoning_data.csv"):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         features = self.extract_features(detections, frame_center, frame_area, motion_text)
         row = features + [action_label]

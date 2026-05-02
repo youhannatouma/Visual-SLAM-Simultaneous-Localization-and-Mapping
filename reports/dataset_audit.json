@@ -1,0 +1,82 @@
+{
+  "input_glob": "data/raw/*.csv",
+  "files": [
+    "data/raw/balanced_synthetic_seed42.csv",
+    "data/raw/legacy_reasoning_data.csv",
+    "data/raw/media_labeled_20260502_131906.csv",
+    "data/raw/media_labeled_20260502_132959.csv",
+    "data/raw/rebalance_patch_seed123.csv",
+    "data/raw/simulated_room_people_chairs_tables_20260502_130404.csv"
+  ],
+  "rows": {
+    "raw": 13874,
+    "clean": 12752,
+    "dropped_missing_required": 0,
+    "dropped_non_finite": 0,
+    "dropped_invalid_label": 0,
+    "dropped_duplicates": 1122
+  },
+  "features": {
+    "count": 37,
+    "columns": [
+      "f0",
+      "f1",
+      "f2",
+      "f3",
+      "f4",
+      "f5",
+      "f6",
+      "f7",
+      "f8",
+      "f9",
+      "f10",
+      "f11",
+      "f12",
+      "f13",
+      "f14",
+      "f15",
+      "f16",
+      "f17",
+      "f18",
+      "f19",
+      "f20",
+      "f21",
+      "f22",
+      "f23",
+      "f24",
+      "f25",
+      "f26",
+      "f27",
+      "f28",
+      "f29",
+      "f30",
+      "f31",
+      "f32",
+      "f33",
+      "f34",
+      "f35",
+      "f36"
+    ]
+  },
+  "class_distribution": {
+    "AVOID_PERSON": 3188,
+    "MOVE_TO_CHAIR": 3188,
+    "CHECK_TABLE": 3188,
+    "EXPLORE": 3188
+  },
+  "imbalance": {
+    "max_over_min_nonzero": 1.0,
+    "threshold": 2.0
+  },
+  "minimum_per_class": {
+    "target": 50,
+    "low_classes": {}
+  },
+  "checks": {
+    "enough_total_rows": true,
+    "all_classes_present": true,
+    "min_per_class_met": true,
+    "imbalance_ok": true
+  },
+  "ready_for_training": true
+}
