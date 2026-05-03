@@ -1,20 +1,20 @@
 {
-  "timestamp": 1777834230,
-  "review_file": "reports/media_review_batch_D_real_fulltmp.csv",
-  "corrections_file": "",
-  "rows_before": 210,
-  "rows_after": 210,
+  "timestamp": 1777840170,
+  "review_file": "reports/media_review_batch_G_real.csv",
+  "corrections_file": "reports/corrections_batch_G_real.csv",
+  "rows_before": 61,
+  "rows_after": 61,
   "qa_sample": {
     "review_sample_ratio_target": 0.12,
-    "review_sample_target_rows": 25,
-    "review_rows_exported": 210,
-    "hard_case_rows": 210,
+    "review_sample_target_rows": 7,
+    "review_rows_exported": 44,
+    "hard_case_rows": 37,
     "hard_cases_plus_sampled": true
   },
   "correction_actions": {
     "relabeled_rows": 0,
     "dropped_rows": 0,
-    "unchanged_rows": 210,
+    "unchanged_rows": 61,
     "relabeled_by_target_class": {
       "AVOID_PERSON": 0,
       "CHECK_TABLE": 0,
@@ -29,7 +29,7 @@
   "unresolved_issues": [],
   "gates": {
     "schema_valid": true,
-    "corrections_applied": false,
+    "corrections_applied": true,
     "qa_sample_present": true
   }
 }

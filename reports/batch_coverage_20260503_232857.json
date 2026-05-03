@@ -1,0 +1,14 @@
+{
+  "timestamp": 1777840200,
+  "batch_id": "batch_H_real",
+  "scenario": "table_chair_transition",
+  "rows_total": 117,
+  "scenario_class_counts": [
+    {
+      "batch_id": "batch_H_real",
+      "scenario": "table_chair_transition",
+      "label": "AVOID_PERSON",
+      "count": 117
+    }
+  ]
+}

@@ -5,9 +5,9 @@
   "current_metrics_path": "reports/metrics.json",
   "gate_results": {
     "test_accuracy_non_regression": {
-      "passed": false,
-      "old": 0.8888888888888888,
-      "new": 0.8113207547169812,
+      "passed": true,
+      "old": 0.78125,
+      "new": 0.81,
       "tolerance": 0.005
     },
     "key_class_f1_non_regression": {
@@ -15,29 +15,29 @@
       "classes": {
         "CHECK_TABLE": {
           "passed": false,
-          "old_f1": 0.8484848484848485,
-          "new_f1": 0.7500000000000001
+          "old_f1": 0.7755102040816326,
+          "new_f1": 0.723404255319149
         },
         "MOVE_TO_CHAIR": {
-          "passed": false,
-          "old_f1": 0.918918918918919,
-          "new_f1": 0.7142857142857143
+          "passed": true,
+          "old_f1": 0.723404255319149,
+          "new_f1": 0.8571428571428571
         }
       }
     },
     "fresh_real_improvement": {
-      "passed": true,
+      "passed": false,
       "old": {
-        "accuracy": 0.375,
-        "macro_f1": 0.3102877514642221
+        "accuracy": 1.0,
+        "macro_f1": 0.25
       },
       "new": {
-        "accuracy": 0.9459459459459459,
-        "macro_f1": 0.9511904761904761
+        "accuracy": 0.16176470588235295,
+        "macro_f1": 0.12749445676274943
       },
       "delta": {
-        "accuracy": 0.5709459459459459,
-        "macro_f1": 0.640902724726254
+        "accuracy": -0.8382352941176471,
+        "macro_f1": -0.12250554323725057
       },
       "required_delta": {
         "accuracy": 0.1,
@@ -46,11 +46,11 @@
     }
   },
   "failure_reasons": [
-    "Test accuracy regressed (0.8888888888888888 -> 0.8113207547169812).",
-    "Key class F1 regression detected."
+    "Key class F1 regression detected.",
+    "Fresh-real improvement gate not met (delta accuracy=-0.8382352941176471, delta macro_f1=-0.12250554323725057)."
   ],
   "recommended_actions": [
-    "Collect more diverse real samples and rebalance weak classes before retraining.",
-    "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases."
+    "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
   ]
 }
