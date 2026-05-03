@@ -282,6 +282,13 @@ python scripts/build_reasoning_data_from_media.py --media-dir /path/to/images_or
 
 Correction CSV columns: `row_id,final_label,drop_row`.
 
+When corrections are provided, schema/label validation is strict. Invalid labels or `drop_row` values fail the run.
+Each ingestion also writes a correction audit artifact:
+
+- `reports/correction_audit_<review_file_stem>.json`
+
+The audit includes relabel/drop/unchanged counts, override summary, QA sample evidence, and machine-checkable gate fields.
+
 ### Training algorithm policy
 
 `train_reasoning.py` is locked to **MLP** (`--algorithm mlp` only).  
@@ -364,6 +371,63 @@ This run now enforces:
 - dataset manifest snapshot
 - disk preflight and retention
 - MLP-only training with promotion checks
+
+### Promotion baseline + fresh-real hard improvement gate
+
+Promotion now uses a promoted baseline artifact:
+
+- baseline file default: `reports/metrics_promoted_baseline.json`
+- summary file default: `reports/promotion_summary.json`
+
+Fresh-real promotion requires:
+
+- `delta(fresh_real_eval.accuracy) >= +0.10`
+- `delta(fresh_real_eval.macro_f1) >= +0.10`
+
+Initialize baseline once (non-promotable establishment run):
+
+```bash
+scripts/run_reasoning_training_pipeline.sh \
+  --python-bin .venv311/bin/python \
+  --establish-promotion-baseline
+```
+
+Regular cycle run (requires improvement vs baseline):
+
+```bash
+scripts/run_reasoning_training_pipeline.sh \
+  --python-bin .venv311/bin/python \
+  --fresh-real-min-improve-acc 0.10 \
+  --fresh-real-min-improve-macro-f1 0.10
+```
+
+### Real cycle runner (batch C / batch D workflow)
+
+Use the cycle runner to execute:
+ingest -> correction audit -> coverage report -> guarded pipeline.
+
+```bash
+scripts/run_real_data_cycle.sh \
+  --python-bin .venv311/bin/python \
+  --media-dir-a /path/to/batch_C_media \
+  --media-dir-b /path/to/batch_D_media \
+  --batch-a-id batch_C_real \
+  --batch-b-id batch_D_real \
+  --scenario-a clutter \
+  --scenario-b occlusion \
+  --review-corrections-a reports/corrections_batch_C_real.csv \
+  --review-corrections-b reports/corrections_batch_D_real.csv \
+  --pipeline-arg --fresh-real-min-improve-acc \
+  --pipeline-arg 0.10 \
+  --pipeline-arg --fresh-real-min-improve-macro-f1 \
+  --pipeline-arg 0.10
+```
+
+Cycle summary output:
+
+- `reports/cycle_report.json`
+
+This report includes scenario coverage, correction-audit references, and gate fields for CI parsing.
 
 ---
 

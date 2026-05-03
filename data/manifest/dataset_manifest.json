@@ -1,6 +1,6 @@
 {
-  "dataset_version": "v20260503_200654",
-  "timestamp": 1777828014,
+  "dataset_version": "v20260503_223926",
+  "timestamp": 1777837166,
   "input_glob": "data/raw/*.csv",
   "raw_files": [
     {
@@ -17,46 +17,56 @@
       "file": "data/raw/media_labeled_batch_B_real_corrected.csv",
       "rows": 168,
       "sha256": "6f4073f1559d5e66033df4ad64dfddb05b3d33f7b153f966a36cd81572204c34"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_C_real.csv",
+      "rows": 240,
+      "sha256": "8ce34854efc698b5f1a1fb3fd5433fc29a5a146bfddb51f979b8366f23dfb5d8"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_D_real.csv",
+      "rows": 240,
+      "sha256": "6141b787b02e9583ea39e87da3d121bce51da9391e045c44c64ce78e707f3c7b"
     }
   ],
-  "raw_total_rows": 816,
+  "raw_total_rows": 1296,
   "source_type_distribution": {
-    "real_media": 816
+    "real_media": 1296
   },
   "class_distribution": {
-    "AVOID_PERSON": 200,
-    "MOVE_TO_CHAIR": 216,
-    "CHECK_TABLE": 200,
-    "EXPLORE": 200
+    "AVOID_PERSON": 320,
+    "MOVE_TO_CHAIR": 336,
+    "CHECK_TABLE": 320,
+    "EXPLORE": 320
   },
   "processed_files": [
     {
       "file": "data/processed/train.csv",
-      "sha256": "d3ef3e493c5f0d6c37e413fd897cea762f0ebdc4050ec3ab1b468beaa86d7dbc",
-      "bytes": 276718
+      "sha256": "136c935fd0dce292a499dc536983fd9204c6da75875113359304dc091839714e",
+      "bytes": 339553
     },
     {
       "file": "data/processed/val.csv",
-      "sha256": "eb7caca503dfe37e72e23cda3a33573e1be47ef5b3c4a0cd03ca936305c4efc2",
-      "bytes": 59440
+      "sha256": "d32217b3f83e4b6da85ca3e217791b718828808a54d3518347c1a4e3af802946",
+      "bytes": 72021
     },
     {
       "file": "data/processed/test.csv",
-      "sha256": "3f17c0af87c1aca6f260b23ee39382af84df389f0dcbcb6945443816be13dd5e",
-      "bytes": 59076
+      "sha256": "39146abe6371dc02be6e380ace21c5baed2f0024d3665cb31c79121c68ff7d95",
+      "bytes": 77022
     },
     {
       "file": "data/processed/fresh_real_eval.csv",
-      "sha256": "fa5964a9ae197f9e87da670923db0db4d618c96a94c8d876f33e262dce6f2334",
-      "bytes": 67043
+      "sha256": "426ae49bead5d93fc276d8a663c9e7171b3113243aacc8e9728587fedc432dd9",
+      "bytes": 31672
     },
     {
       "file": "data/processed/metadata.json",
-      "sha256": "f347b88e0afad67177fb371a03e57fc966e51d474db3f7641432f7e213691fb3",
-      "bytes": 1787
+      "sha256": "313f0ec022b9ee37b1216804028976e5d4f0b0054533522c7cfdfba3e8f41cc7",
+      "bytes": 1876
     }
   ],
-  "fingerprint_sha256": "217bfcbb923c1a9b673be991a262f6193a26e1e43a2f1015a50a04b7d9f4db9e",
+  "fingerprint_sha256": "86639e63dde9185761d38a009a9e942489f85412cf590f7fa278fa8298298871",
   "policy": {
     "default_training_source": "data/raw",
     "raw_archive_excluded_by_default": true,

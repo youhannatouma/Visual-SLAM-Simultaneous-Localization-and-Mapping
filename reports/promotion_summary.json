@@ -1,0 +1,56 @@
+{
+  "status": "not_promoted",
+  "promotable": false,
+  "baseline_path": "reports/metrics_promoted_baseline.json",
+  "current_metrics_path": "reports/metrics.json",
+  "gate_results": {
+    "test_accuracy_non_regression": {
+      "passed": false,
+      "old": 0.8888888888888888,
+      "new": 0.8113207547169812,
+      "tolerance": 0.005
+    },
+    "key_class_f1_non_regression": {
+      "passed": false,
+      "classes": {
+        "CHECK_TABLE": {
+          "passed": false,
+          "old_f1": 0.8484848484848485,
+          "new_f1": 0.7500000000000001
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": false,
+          "old_f1": 0.918918918918919,
+          "new_f1": 0.7142857142857143
+        }
+      }
+    },
+    "fresh_real_improvement": {
+      "passed": true,
+      "old": {
+        "accuracy": 0.375,
+        "macro_f1": 0.3102877514642221
+      },
+      "new": {
+        "accuracy": 0.9459459459459459,
+        "macro_f1": 0.9511904761904761
+      },
+      "delta": {
+        "accuracy": 0.5709459459459459,
+        "macro_f1": 0.640902724726254
+      },
+      "required_delta": {
+        "accuracy": 0.1,
+        "macro_f1": 0.1
+      }
+    }
+  },
+  "failure_reasons": [
+    "Test accuracy regressed (0.8888888888888888 -> 0.8113207547169812).",
+    "Key class F1 regression detected."
+  ],
+  "recommended_actions": [
+    "Collect more diverse real samples and rebalance weak classes before retraining.",
+    "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases."
+  ]
+}

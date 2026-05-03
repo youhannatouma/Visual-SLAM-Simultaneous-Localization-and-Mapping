@@ -1,0 +1,35 @@
+{
+  "timestamp": 1777834417,
+  "review_file": "reports/media_review_batch_D_real.csv",
+  "corrections_file": "reports/corrections_batch_D_real_targeted.csv",
+  "rows_before": 210,
+  "rows_after": 60,
+  "qa_sample": {
+    "review_sample_ratio_target": 0.12,
+    "review_sample_target_rows": 25,
+    "review_rows_exported": 60,
+    "hard_case_rows": 210,
+    "hard_cases_plus_sampled": false
+  },
+  "correction_actions": {
+    "relabeled_rows": 43,
+    "dropped_rows": 150,
+    "unchanged_rows": 17,
+    "relabeled_by_target_class": {
+      "AVOID_PERSON": 0,
+      "CHECK_TABLE": 0,
+      "EXPLORE": 0,
+      "MOVE_TO_CHAIR": 0
+    }
+  },
+  "reviewer_override_summary": {
+    "overrides_without_detection_support": 0,
+    "overrides_allowed": true
+  },
+  "unresolved_issues": [],
+  "gates": {
+    "schema_valid": true,
+    "corrections_applied": true,
+    "qa_sample_present": true
+  }
+}
