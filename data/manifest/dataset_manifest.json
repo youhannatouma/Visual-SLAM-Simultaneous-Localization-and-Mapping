@@ -1,0 +1,90 @@
+{
+  "dataset_version": "v20260503_233932",
+  "timestamp": 1777840772,
+  "input_glob": "data/raw/*.csv",
+  "raw_files": [
+    {
+      "file": "data/raw/curated_real_balanced.csv",
+      "rows": 480,
+      "sha256": "9e4f4a54cf6dae88e5b6cd3d271527606d6ece64b0ba943ef1f84983c58d5f85"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_A_real_corrected.csv",
+      "rows": 168,
+      "sha256": "82025f0a749b75cef4c4588d30628866f096e7a1166acbcd45a9d78d9af105bf"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_B_real_corrected.csv",
+      "rows": 168,
+      "sha256": "6f4073f1559d5e66033df4ad64dfddb05b3d33f7b153f966a36cd81572204c34"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_D_real.csv",
+      "rows": 24,
+      "sha256": "052bc9410ade2ff1a411017071f3e6b186d37425bbec3d91d5ba75e0b68e37b9"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_E_real.csv",
+      "rows": 11,
+      "sha256": "8d8edadb5c5e3277ffaf2b70b29312aea73539d2c6657d1508dfb710b0dee571"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_F_real.csv",
+      "rows": 70,
+      "sha256": "6d0ce9bea03c432c4f840bf6393dd30ebb0c302bf0d8b28c64a70c5594fca291"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_G_real.csv",
+      "rows": 61,
+      "sha256": "cf9c9af91f20a81464244756d90d506ecddfaf2a893b635da5c86355182be166"
+    },
+    {
+      "file": "data/raw/media_labeled_batch_H_real.csv",
+      "rows": 12,
+      "sha256": "934b7bc28615a4fba31e1f010a7ead771f6ae90289574409016e340e6ce34231"
+    }
+  ],
+  "raw_total_rows": 994,
+  "source_type_distribution": {
+    "real_media": 994
+  },
+  "class_distribution": {
+    "AVOID_PERSON": 254,
+    "MOVE_TO_CHAIR": 258,
+    "CHECK_TABLE": 216,
+    "EXPLORE": 266
+  },
+  "processed_files": [
+    {
+      "file": "data/processed/train.csv",
+      "sha256": "742f99a4d0da0c6d1ca863db538ade229d65ff80bc72b029041f903e77301bd1",
+      "bytes": 350269
+    },
+    {
+      "file": "data/processed/val.csv",
+      "sha256": "e90e9497bce6fad98fd39ddddb0021a6410908801f1f435cd30012ce801c5aa4",
+      "bytes": 71169
+    },
+    {
+      "file": "data/processed/test.csv",
+      "sha256": "ec503c6c4dc7100e691638213279ea6005115930fa52e6ff81884c9f291f74e0",
+      "bytes": 82557
+    },
+    {
+      "file": "data/processed/fresh_real_eval.csv",
+      "sha256": "2e8eb4bd23cbb698ede98b6defb2c58f385f65d773062271a7bb219e9dfaba8c",
+      "bytes": 4650
+    },
+    {
+      "file": "data/processed/metadata.json",
+      "sha256": "8b4a74969d470d21ff1cc3e04418b8603bd537ff251a048f3f779954a1d58920",
+      "bytes": 2013
+    }
+  ],
+  "fingerprint_sha256": "0af240ef1dfb93e73a7447ad9dc37512a29b261fe8d74594279f40a7783881f0",
+  "policy": {
+    "default_training_source": "data/raw",
+    "raw_archive_excluded_by_default": true,
+    "synthetic_requires_explicit_experiment": true
+  }
+}

@@ -1,15 +1,22 @@
 {
   "input_glob": "data/raw/*.csv",
   "files": [
-    "data/raw/curated_real_balanced.csv"
+    "data/raw/curated_real_balanced.csv",
+    "data/raw/media_labeled_batch_A_real_corrected.csv",
+    "data/raw/media_labeled_batch_B_real_corrected.csv",
+    "data/raw/media_labeled_batch_D_real.csv",
+    "data/raw/media_labeled_batch_E_real.csv",
+    "data/raw/media_labeled_batch_F_real.csv",
+    "data/raw/media_labeled_batch_G_real.csv",
+    "data/raw/media_labeled_batch_H_real.csv"
   ],
   "rows": {
-    "raw": 480,
-    "clean": 480,
+    "raw": 994,
+    "clean": 781,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_invalid_label": 0,
-    "dropped_duplicates": 0
+    "dropped_duplicates": 213
   },
   "features": {
     "count": 37,
@@ -54,34 +61,79 @@
     ]
   },
   "class_distribution": {
-    "AVOID_PERSON": 120,
-    "MOVE_TO_CHAIR": 120,
-    "CHECK_TABLE": 120,
-    "EXPLORE": 120
+    "AVOID_PERSON": 208,
+    "MOVE_TO_CHAIR": 202,
+    "CHECK_TABLE": 170,
+    "EXPLORE": 201
   },
   "source_type_distribution": {
-    "real_media": 480
+    "real_media": 781
   },
   "source_class_distribution": {
     "real_media": {
-      "AVOID_PERSON": 120,
-      "MOVE_TO_CHAIR": 120,
-      "CHECK_TABLE": 120,
-      "EXPLORE": 120
+      "AVOID_PERSON": 208,
+      "MOVE_TO_CHAIR": 202,
+      "CHECK_TABLE": 170,
+      "EXPLORE": 201
+    }
+  },
+  "scenario_class_distribution": {
+    "long_range": {
+      "AVOID_PERSON": 2,
+      "MOVE_TO_CHAIR": 0,
+      "CHECK_TABLE": 0,
+      "EXPLORE": 0
+    },
+    "mixed": {
+      "AVOID_PERSON": 49,
+      "MOVE_TO_CHAIR": 48,
+      "CHECK_TABLE": 40,
+      "EXPLORE": 40
+    },
+    "occlusion": {
+      "AVOID_PERSON": 24,
+      "MOVE_TO_CHAIR": 34,
+      "CHECK_TABLE": 10,
+      "EXPLORE": 0
+    },
+    "table_chair_transition": {
+      "AVOID_PERSON": 12,
+      "MOVE_TO_CHAIR": 0,
+      "CHECK_TABLE": 0,
+      "EXPLORE": 0
+    },
+    "table_focus_clutter": {
+      "AVOID_PERSON": 1,
+      "MOVE_TO_CHAIR": 0,
+      "CHECK_TABLE": 0,
+      "EXPLORE": 41
     }
   },
   "imbalance": {
-    "max_over_min_nonzero": 1.0,
+    "max_over_min_nonzero": 1.223529411764706,
     "threshold": 1.3
   },
   "source_quality": {
-    "real_rows": 480,
+    "real_rows": 781,
     "synthetic_rows": 0,
-    "total_clean": 480,
+    "total_clean": 781,
     "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
-    "max_synthetic_share": 0.4
+    "max_synthetic_share": 0.4,
+    "independent_real_batches_count": 6,
+    "independent_real_batches": [
+      "batch_A_real",
+      "batch_D_real",
+      "batch_E_real",
+      "batch_F_real",
+      "batch_G_real",
+      "batch_H_real"
+    ]
+  },
+  "scenario_quota": {
+    "requested": false,
+    "failures": []
   },
   "minimum_per_class": {
     "target": 50,
@@ -93,7 +145,9 @@
     "min_per_class_met": true,
     "imbalance_ok": true,
     "real_share_ok": true,
-    "synthetic_share_ok": true
+    "synthetic_share_ok": true,
+    "two_real_batches_ok": true,
+    "scenario_quota_ok": true
   },
   "ready_for_training": true
 }

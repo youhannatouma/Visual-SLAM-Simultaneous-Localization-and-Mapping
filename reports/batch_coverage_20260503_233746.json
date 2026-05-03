@@ -1,0 +1,26 @@
+{
+  "timestamp": 1777840763,
+  "batch_id": "batch_F_real",
+  "scenario": "occlusion",
+  "rows_total": 70,
+  "scenario_class_counts": [
+    {
+      "batch_id": "batch_F_real",
+      "scenario": "occlusion",
+      "label": "AVOID_PERSON",
+      "count": 24
+    },
+    {
+      "batch_id": "batch_F_real",
+      "scenario": "occlusion",
+      "label": "CHECK_TABLE",
+      "count": 10
+    },
+    {
+      "batch_id": "batch_F_real",
+      "scenario": "occlusion",
+      "label": "MOVE_TO_CHAIR",
+      "count": 36
+    }
+  ]
+}

@@ -1,7 +1,14 @@
 {
   "input_glob": "data/raw/*.csv",
   "input_files": [
-    "data/raw/curated_real_balanced.csv"
+    "data/raw/curated_real_balanced.csv",
+    "data/raw/media_labeled_batch_A_real_corrected.csv",
+    "data/raw/media_labeled_batch_B_real_corrected.csv",
+    "data/raw/media_labeled_batch_D_real.csv",
+    "data/raw/media_labeled_batch_E_real.csv",
+    "data/raw/media_labeled_batch_F_real.csv",
+    "data/raw/media_labeled_batch_G_real.csv",
+    "data/raw/media_labeled_batch_H_real.csv"
   ],
   "balance": "cap",
   "seed": 42,
@@ -11,40 +18,41 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 480,
-    "rows_after_dropna": 480,
-    "rows_after_finite_check": 480,
-    "rows_after_label_filter": 480,
-    "rows_after_dedup": 480,
+    "rows_initial": 994,
+    "rows_after_dropna": 994,
+    "rows_after_finite_check": 994,
+    "rows_after_label_filter": 994,
+    "rows_after_dedup": 781,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 0,
+    "dropped_duplicates": 213,
     "feature_count": 37
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 120,
-      "MOVE_TO_CHAIR": 120,
-      "CHECK_TABLE": 120,
-      "EXPLORE": 120
+      "AVOID_PERSON": 208,
+      "MOVE_TO_CHAIR": 202,
+      "CHECK_TABLE": 170,
+      "EXPLORE": 201
     }
   },
   "source_quality": {
-    "real_rows": 480,
+    "real_rows": 781,
     "synthetic_rows": 0,
-    "total_clean": 480,
+    "total_clean": 781,
     "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
     "max_synthetic_share": 0.4
   },
   "holdout_latest_real_source": {
-    "enabled": false,
-    "source_file": "",
-    "rows": 0,
-    "path": ""
+    "enabled": true,
+    "source_file": "media_labeled_batch_H_real.csv",
+    "rows": 12,
+    "path": "data/processed/fresh_real_eval.csv",
+    "require_two_real_batches_for_holdout": true
   },
   "feature_columns": [
     "f0",
@@ -86,9 +94,9 @@
     "f36"
   ],
   "rows": {
-    "train": 336,
-    "val": 72,
-    "test": 72,
-    "total": 480
+    "train": 531,
+    "val": 112,
+    "test": 119,
+    "total": 762
   }
 }

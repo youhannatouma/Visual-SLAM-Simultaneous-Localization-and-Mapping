@@ -4,6 +4,8 @@ set -euo pipefail
 INPUT_GLOB="data/raw/*.csv"
 OUT_DIR="data/processed"
 REPORT="reports/dataset_audit.json"
+MANIFEST_PATH="data/manifest/dataset_manifest.json"
+CHANGELOG_PATH="data/manifest/CHANGELOG.md"
 MIN_PER_CLASS=50
 MAX_IMBALANCE=1.3
 MIN_REAL_SHARE=0.6
@@ -15,6 +17,14 @@ TRAIN_BATCH_SIZE=32
 TRAIN_LR=1e-3
 COLLECT_FIRST=0
 PYTHON_BIN=".venv311/bin/python"
+ALLOW_ARCHIVE_EXPERIMENT=0
+DISK_MIN_FREE_GB=1.0
+PRUNE=1
+PROMOTION_BASELINE_PATH="reports/metrics_promoted_baseline.json"
+PROMOTION_SUMMARY_PATH="reports/promotion_summary.json"
+FRESH_REAL_MIN_IMPROVE_ACC=0.10
+FRESH_REAL_MIN_IMPROVE_MACRO_F1=0.10
+ESTABLISH_PROMOTION_BASELINE=0
 
 usage() {
   cat <<USAGE
@@ -26,6 +36,8 @@ Options:
   --input-glob <glob>            Raw input glob (default: data/raw/*.csv).
   --out-dir <dir>                Processed output directory (default: data/processed).
   --report <path>                Audit report path (default: reports/dataset_audit.json).
+  --manifest-path <path>         Dataset manifest output (default: data/manifest/dataset_manifest.json).
+  --changelog-path <path>        Dataset changelog path (default: data/manifest/CHANGELOG.md).
   --min-per-class <n>            Minimum samples per class (default: 50).
   --max-imbalance <ratio>        Max class imbalance ratio (default: 1.3).
   --min-real-share <ratio>       Minimum real data share gate (default: 0.6).
@@ -35,6 +47,14 @@ Options:
   --epochs <n>                   Training epochs (default: 30).
   --batch-size <n>               Training batch size (default: 32).
   --lr <float>                   Training learning rate (default: 1e-3).
+  --allow-archive-experiment     Allow training from globs that include data/raw_archive.
+  --disk-min-free-gb <n>         Minimum free disk guard before running (default: 1.0).
+  --no-prune                     Disable aggressive pruning preflight.
+  --promotion-baseline-path <path> Baseline metrics used for promotion checks (default: reports/metrics_promoted_baseline.json).
+  --promotion-summary <path>     Promotion summary JSON output (default: reports/promotion_summary.json).
+  --fresh-real-min-improve-acc <x> Minimum required fresh-real accuracy improvement vs promoted baseline (default: 0.10).
+  --fresh-real-min-improve-macro-f1 <x> Minimum required fresh-real macro F1 improvement vs promoted baseline (default: 0.10).
+  --establish-promotion-baseline If baseline is missing, save current metrics as baseline and mark run non-promotable.
   -h, --help                     Show this help.
 USAGE
 }
@@ -59,6 +79,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --report)
       REPORT="$2"
+      shift 2
+      ;;
+    --manifest-path)
+      MANIFEST_PATH="$2"
+      shift 2
+      ;;
+    --changelog-path)
+      CHANGELOG_PATH="$2"
       shift 2
       ;;
     --min-per-class)
@@ -97,6 +125,38 @@ while [[ $# -gt 0 ]]; do
       TRAIN_LR="$2"
       shift 2
       ;;
+    --allow-archive-experiment)
+      ALLOW_ARCHIVE_EXPERIMENT=1
+      shift
+      ;;
+    --disk-min-free-gb)
+      DISK_MIN_FREE_GB="$2"
+      shift 2
+      ;;
+    --no-prune)
+      PRUNE=0
+      shift
+      ;;
+    --promotion-baseline-path)
+      PROMOTION_BASELINE_PATH="$2"
+      shift 2
+      ;;
+    --promotion-summary)
+      PROMOTION_SUMMARY_PATH="$2"
+      shift 2
+      ;;
+    --fresh-real-min-improve-acc)
+      FRESH_REAL_MIN_IMPROVE_ACC="$2"
+      shift 2
+      ;;
+    --fresh-real-min-improve-macro-f1)
+      FRESH_REAL_MIN_IMPROVE_MACRO_F1="$2"
+      shift 2
+      ;;
+    --establish-promotion-baseline)
+      ESTABLISH_PROMOTION_BASELINE=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -109,6 +169,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$ALLOW_ARCHIVE_EXPERIMENT" -ne 1 && "$INPUT_GLOB" == *"raw_archive"* ]]; then
+  echo "Archive policy gate failed: data/raw_archive is excluded by default. Use --allow-archive-experiment to override." >&2
+  exit 1
+fi
+
 if [[ "$COLLECT_FIRST" -eq 1 ]]; then
   echo "[1/4] Collect labeled sessions with main.py (manual)."
   echo "      Label keys: a=AVOID_PERSON c=MOVE_TO_CHAIR t=CHECK_TABLE e=EXPLORE"
@@ -118,6 +183,17 @@ fi
 
 mkdir -p "$(dirname "$REPORT")" "$OUT_DIR"
 
+echo "[0/5] Running disk preflight + retention..."
+PRUNE_ARGS=()
+if [[ "$PRUNE" -eq 1 ]]; then
+  PRUNE_ARGS+=(--prune)
+fi
+"$PYTHON_BIN" scripts/manage_artifacts.py \
+  --min-free-gb "$DISK_MIN_FREE_GB" \
+  --budget-report reports/artifact_budget.json \
+  --protect-prefix "$(basename "$REPORT")" \
+  "${PRUNE_ARGS[@]}"
+
 echo "[2/4] Running dataset audit..."
 "$PYTHON_BIN" scripts/audit_reasoning_data.py \
   --input-glob "$INPUT_GLOB" \
@@ -125,6 +201,7 @@ echo "[2/4] Running dataset audit..."
   --max-class-imbalance-ratio "$MAX_IMBALANCE" \
   --min-real-share "$MIN_REAL_SHARE" \
   --max-synthetic-share "$MAX_SYNTHETIC_SHARE" \
+  --require-two-real-batches \
   --report "$REPORT"
 
 READY_FOR_TRAINING=$("$PYTHON_BIN" - <<PY
@@ -155,8 +232,17 @@ echo "[3/4] Running preprocessing..."
   --min-per-class "$MIN_PER_CLASS" \
   --min-real-share "$MIN_REAL_SHARE" \
   --max-synthetic-share "$MAX_SYNTHETIC_SHARE" \
+  --enforce-review-applied \
+  --require-two-real-batches-for-holdout \
   --holdout-latest-real-source \
   --seed "$SEED"
+
+echo "[3.5/4] Writing dataset manifest snapshot..."
+"$PYTHON_BIN" scripts/create_dataset_manifest.py \
+  --input-glob "$INPUT_GLOB" \
+  --processed-dir "$OUT_DIR" \
+  --manifest-path "$MANIFEST_PATH" \
+  --changelog-path "$CHANGELOG_PATH"
 
 echo "[4/4] Training reasoning model..."
 if [[ -f reports/metrics.json ]]; then
@@ -171,42 +257,134 @@ fi
   --batch-size "$TRAIN_BATCH_SIZE" \
   --lr "$TRAIN_LR"
 
-if [[ -f reports/metrics_previous.json && -f reports/metrics.json ]]; then
-  "$PYTHON_BIN" - <<'PY'
+"$PYTHON_BIN" - <<PY
 import json
+import shutil
 from pathlib import Path
 
-old = json.loads(Path("reports/metrics_previous.json").read_text(encoding="utf-8"))
-new = json.loads(Path("reports/metrics.json").read_text(encoding="utf-8"))
+new_path = Path("reports/metrics.json")
+if not new_path.exists():
+    raise SystemExit("Promotion gate failed: reports/metrics.json is missing.")
 
-tol = 0.005
-old_test = float(old.get("accuracy", {}).get("test", 0.0))
-new_test = float(new.get("accuracy", {}).get("test", 0.0))
-if new_test + tol < old_test:
-    raise SystemExit(
-        f"Promotion gate failed: test accuracy dropped from {old_test:.4f} to {new_test:.4f}"
-    )
+baseline_path = Path(r'''$PROMOTION_BASELINE_PATH''')
+summary_path = Path(r'''$PROMOTION_SUMMARY_PATH''')
+summary_path.parent.mkdir(parents=True, exist_ok=True)
+baseline_path.parent.mkdir(parents=True, exist_ok=True)
 
-for label in ("CHECK_TABLE", "MOVE_TO_CHAIR"):
-    old_f1 = float(old.get("per_class", {}).get(label, {}).get("f1", 0.0))
-    new_f1 = float(new.get("per_class", {}).get(label, {}).get("f1", 0.0))
-    if new_f1 + 1e-12 < old_f1:
+fresh_acc_threshold = float(r'''$FRESH_REAL_MIN_IMPROVE_ACC''')
+fresh_f1_threshold = float(r'''$FRESH_REAL_MIN_IMPROVE_MACRO_F1''')
+establish_mode = bool(int(r'''$ESTABLISH_PROMOTION_BASELINE'''))
+
+new = json.loads(new_path.read_text(encoding="utf-8"))
+
+def get_float(obj, *keys):
+    cur = obj
+    for k in keys:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(k)
+    if cur is None:
+        return None
+    try:
+        return float(cur)
+    except Exception:
+        return None
+
+gate_results = {}
+recommended_actions = []
+promotable = True
+status = "promoted"
+failure_reasons = []
+
+if not baseline_path.exists():
+    if establish_mode:
+        shutil.copy2(new_path, baseline_path)
+        promotable = False
+        status = "baseline_established_non_promotable"
+        failure_reasons.append("No promoted baseline existed; baseline established for next-cycle comparison.")
+        recommended_actions.append("Run one more full cycle to compare against the newly established promoted baseline.")
+    else:
         raise SystemExit(
-            f"Promotion gate failed: {label} F1 dropped from {old_f1:.4f} to {new_f1:.4f}"
+            "Promotion gate failed: baseline metrics file is missing. "
+            "Use --establish-promotion-baseline once to initialize."
         )
+else:
+    old = json.loads(baseline_path.read_text(encoding="utf-8"))
+    tol = 0.005
 
-old_fresh = old.get("fresh_real_eval", {}).get("accuracy")
-new_fresh = new.get("fresh_real_eval", {}).get("accuracy")
-if old_fresh is not None and new_fresh is not None:
-    old_fresh = float(old_fresh)
-    new_fresh = float(new_fresh)
-    if new_fresh + tol < old_fresh:
-        raise SystemExit(
-            f"Promotion gate failed: fresh real eval accuracy dropped from {old_fresh:.4f} to {new_fresh:.4f}"
+    old_test = get_float(old, "accuracy", "test")
+    new_test = get_float(new, "accuracy", "test")
+    test_ok = (old_test is not None and new_test is not None and new_test + tol >= old_test)
+    gate_results["test_accuracy_non_regression"] = {
+        "passed": bool(test_ok),
+        "old": old_test,
+        "new": new_test,
+        "tolerance": tol,
+    }
+    if not test_ok:
+        promotable = False
+        failure_reasons.append(f"Test accuracy regressed ({old_test} -> {new_test}).")
+        recommended_actions.append("Collect more diverse real samples and rebalance weak classes before retraining.")
+
+    key_class_fail = False
+    key_class_rows = {}
+    for label in ("CHECK_TABLE", "MOVE_TO_CHAIR"):
+        old_f1 = get_float(old, "per_class", label, "f1")
+        new_f1 = get_float(new, "per_class", label, "f1")
+        ok = old_f1 is not None and new_f1 is not None and new_f1 + 1e-12 >= old_f1
+        key_class_rows[label] = {"passed": bool(ok), "old_f1": old_f1, "new_f1": new_f1}
+        if not ok:
+            key_class_fail = True
+    gate_results["key_class_f1_non_regression"] = {"passed": not key_class_fail, "classes": key_class_rows}
+    if key_class_fail:
+        promotable = False
+        failure_reasons.append("Key class F1 regression detected.")
+        recommended_actions.append("Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.")
+
+    old_fresh_acc = get_float(old, "fresh_real_eval", "accuracy")
+    new_fresh_acc = get_float(new, "fresh_real_eval", "accuracy")
+    old_fresh_f1 = get_float(old, "fresh_real_eval", "macro_f1")
+    new_fresh_f1 = get_float(new, "fresh_real_eval", "macro_f1")
+
+    acc_delta = None if old_fresh_acc is None or new_fresh_acc is None else (new_fresh_acc - old_fresh_acc)
+    f1_delta = None if old_fresh_f1 is None or new_fresh_f1 is None else (new_fresh_f1 - old_fresh_f1)
+    fresh_acc_ok = acc_delta is not None and acc_delta >= fresh_acc_threshold
+    fresh_f1_ok = f1_delta is not None and f1_delta >= fresh_f1_threshold
+    gate_results["fresh_real_improvement"] = {
+        "passed": bool(fresh_acc_ok and fresh_f1_ok),
+        "old": {"accuracy": old_fresh_acc, "macro_f1": old_fresh_f1},
+        "new": {"accuracy": new_fresh_acc, "macro_f1": new_fresh_f1},
+        "delta": {"accuracy": acc_delta, "macro_f1": f1_delta},
+        "required_delta": {"accuracy": fresh_acc_threshold, "macro_f1": fresh_f1_threshold},
+    }
+    if not (fresh_acc_ok and fresh_f1_ok):
+        promotable = False
+        failure_reasons.append(
+            "Fresh-real improvement gate not met "
+            f"(delta accuracy={acc_delta}, delta macro_f1={f1_delta})."
         )
+        recommended_actions.append("Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.")
 
-print("Promotion gates passed.")
+    if promotable:
+        shutil.copy2(new_path, baseline_path)
+        status = "promoted"
+    else:
+        status = "not_promoted"
+
+summary = {
+    "status": status,
+    "promotable": bool(promotable),
+    "baseline_path": str(baseline_path),
+    "current_metrics_path": str(new_path),
+    "gate_results": gate_results,
+    "failure_reasons": failure_reasons,
+    "recommended_actions": recommended_actions,
+}
+summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+print(f"Promotion summary: {summary_path}")
+
+if not promotable:
+    raise SystemExit("Promotion gate failed: run is non-promotable. See promotion summary JSON for details.")
 PY
-fi
 
 echo "Pipeline completed successfully."
