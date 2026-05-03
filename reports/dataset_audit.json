@@ -61,8 +61,8 @@
     ]
   },
   "class_distribution": {
-    "AVOID_PERSON": 221,
-    "MOVE_TO_CHAIR": 189,
+    "AVOID_PERSON": 208,
+    "MOVE_TO_CHAIR": 202,
     "CHECK_TABLE": 170,
     "EXPLORE": 201
   },
@@ -71,8 +71,8 @@
   },
   "source_class_distribution": {
     "real_media": {
-      "AVOID_PERSON": 221,
-      "MOVE_TO_CHAIR": 189,
+      "AVOID_PERSON": 208,
+      "MOVE_TO_CHAIR": 202,
       "CHECK_TABLE": 170,
       "EXPLORE": 201
     }
@@ -91,8 +91,8 @@
       "EXPLORE": 40
     },
     "occlusion": {
-      "AVOID_PERSON": 37,
-      "MOVE_TO_CHAIR": 21,
+      "AVOID_PERSON": 24,
+      "MOVE_TO_CHAIR": 34,
       "CHECK_TABLE": 10,
       "EXPLORE": 0
     },
@@ -110,7 +110,7 @@
     }
   },
   "imbalance": {
-    "max_over_min_nonzero": 1.3,
+    "max_over_min_nonzero": 1.223529411764706,
     "threshold": 1.3
   },
   "source_quality": {

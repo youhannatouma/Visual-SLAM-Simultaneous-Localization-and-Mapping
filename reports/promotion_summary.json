@@ -6,8 +6,8 @@
   "gate_results": {
     "test_accuracy_non_regression": {
       "passed": true,
-      "old": 0.78125,
-      "new": 0.81,
+      "old": 0.7413793103448276,
+      "new": 0.7647058823529411,
       "tolerance": 0.005
     },
     "key_class_f1_non_regression": {
@@ -15,13 +15,13 @@
       "classes": {
         "CHECK_TABLE": {
           "passed": false,
-          "old_f1": 0.7755102040816326,
-          "new_f1": 0.723404255319149
+          "old_f1": 0.7368421052631577,
+          "new_f1": 0.7017543859649122
         },
         "MOVE_TO_CHAIR": {
           "passed": true,
-          "old_f1": 0.723404255319149,
-          "new_f1": 0.8571428571428571
+          "old_f1": 0.7333333333333333,
+          "new_f1": 0.7457627118644068
         }
       }
     },
@@ -32,12 +32,12 @@
         "macro_f1": 0.25
       },
       "new": {
-        "accuracy": 0.16176470588235295,
-        "macro_f1": 0.12749445676274943
+        "accuracy": 1.0,
+        "macro_f1": 0.25
       },
       "delta": {
-        "accuracy": -0.8382352941176471,
-        "macro_f1": -0.12250554323725057
+        "accuracy": 0.0,
+        "macro_f1": 0.0
       },
       "required_delta": {
         "accuracy": 0.1,
@@ -47,7 +47,7 @@
   },
   "failure_reasons": [
     "Key class F1 regression detected.",
-    "Fresh-real improvement gate not met (delta accuracy=-0.8382352941176471, delta macro_f1=-0.12250554323725057)."
+    "Fresh-real improvement gate not met (delta accuracy=0.0, delta macro_f1=0.0)."
   ],
   "recommended_actions": [
     "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",

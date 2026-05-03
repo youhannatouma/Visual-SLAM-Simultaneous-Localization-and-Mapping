@@ -352,3 +352,27 @@
 - class distribution: {'AVOID_PERSON': 267, 'MOVE_TO_CHAIR': 245, 'CHECK_TABLE': 216, 'EXPLORE': 266}
 - source distribution: {'real_media': 994}
 
+## v20260503_233448
+- timestamp: 1777840488
+- raw files: 8
+- raw rows: 994
+- fingerprint: fef4cfe8c2de2c538e37b9f9f59bea348a7ea23d83d53821778fc835625d8e72
+- class distribution: {'AVOID_PERSON': 267, 'MOVE_TO_CHAIR': 245, 'CHECK_TABLE': 216, 'EXPLORE': 266}
+- source distribution: {'real_media': 994}
+
+## v20260503_233539
+- timestamp: 1777840539
+- raw files: 8
+- raw rows: 994
+- fingerprint: fef4cfe8c2de2c538e37b9f9f59bea348a7ea23d83d53821778fc835625d8e72
+- class distribution: {'AVOID_PERSON': 267, 'MOVE_TO_CHAIR': 245, 'CHECK_TABLE': 216, 'EXPLORE': 266}
+- source distribution: {'real_media': 994}
+
+## v20260503_233932
+- timestamp: 1777840772
+- raw files: 8
+- raw rows: 994
+- fingerprint: 0af240ef1dfb93e73a7447ad9dc37512a29b261fe8d74594279f40a7783881f0
+- class distribution: {'AVOID_PERSON': 254, 'MOVE_TO_CHAIR': 258, 'CHECK_TABLE': 216, 'EXPLORE': 266}
+- source distribution: {'real_media': 994}
+

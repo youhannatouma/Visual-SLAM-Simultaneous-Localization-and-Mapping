@@ -1,5 +1,5 @@
 {
-  "timestamp": 1777839679,
+  "timestamp": 1777840763,
   "review_file": "reports/media_review_batch_F_real.csv",
   "corrections_file": "reports/corrections_batch_F_real.csv",
   "rows_before": 183,
@@ -12,9 +12,9 @@
     "hard_cases_plus_sampled": false
   },
   "correction_actions": {
-    "relabeled_rows": 10,
+    "relabeled_rows": 23,
     "dropped_rows": 113,
-    "unchanged_rows": 60,
+    "unchanged_rows": 47,
     "relabeled_by_target_class": {
       "AVOID_PERSON": 0,
       "CHECK_TABLE": 0,

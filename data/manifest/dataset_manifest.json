@@ -1,6 +1,6 @@
 {
-  "dataset_version": "v20260503_233144",
-  "timestamp": 1777840304,
+  "dataset_version": "v20260503_233932",
+  "timestamp": 1777840772,
   "input_glob": "data/raw/*.csv",
   "raw_files": [
     {
@@ -31,7 +31,7 @@
     {
       "file": "data/raw/media_labeled_batch_F_real.csv",
       "rows": 70,
-      "sha256": "e62488a64c66ab45d48e14927b59b1a376dd16f9b4fd7fcf06afc1e82a00c6a7"
+      "sha256": "6d0ce9bea03c432c4f840bf6393dd30ebb0c302bf0d8b28c64a70c5594fca291"
     },
     {
       "file": "data/raw/media_labeled_batch_G_real.csv",
@@ -49,26 +49,26 @@
     "real_media": 994
   },
   "class_distribution": {
-    "AVOID_PERSON": 267,
-    "MOVE_TO_CHAIR": 245,
+    "AVOID_PERSON": 254,
+    "MOVE_TO_CHAIR": 258,
     "CHECK_TABLE": 216,
     "EXPLORE": 266
   },
   "processed_files": [
     {
       "file": "data/processed/train.csv",
-      "sha256": "e96704b5608024efb7d6d9da320b67b4f76593c14bd2e85d82c97b3afae990e1",
-      "bytes": 341929
+      "sha256": "742f99a4d0da0c6d1ca863db538ade229d65ff80bc72b029041f903e77301bd1",
+      "bytes": 350269
     },
     {
       "file": "data/processed/val.csv",
-      "sha256": "51bec66f46d03dd2418f7b899785b69e081175744b82fe62b399801cfe84f661",
-      "bytes": 78004
+      "sha256": "e90e9497bce6fad98fd39ddddb0021a6410908801f1f435cd30012ce801c5aa4",
+      "bytes": 71169
     },
     {
       "file": "data/processed/test.csv",
-      "sha256": "01b96b71ff2cc2d272a935f163c6e041e6878781663d5e15f67053d0e98403a0",
-      "bytes": 74634
+      "sha256": "ec503c6c4dc7100e691638213279ea6005115930fa52e6ff81884c9f291f74e0",
+      "bytes": 82557
     },
     {
       "file": "data/processed/fresh_real_eval.csv",
@@ -77,11 +77,11 @@
     },
     {
       "file": "data/processed/metadata.json",
-      "sha256": "17ddbc4028ce61e81aee8f32b1b3a3f9f344cab9a56a1c90ade98f8ea2dfac8d",
+      "sha256": "8b4a74969d470d21ff1cc3e04418b8603bd537ff251a048f3f779954a1d58920",
       "bytes": 2013
     }
   ],
-  "fingerprint_sha256": "fef4cfe8c2de2c538e37b9f9f59bea348a7ea23d83d53821778fc835625d8e72",
+  "fingerprint_sha256": "0af240ef1dfb93e73a7447ad9dc37512a29b261fe8d74594279f40a7783881f0",
   "policy": {
     "default_training_source": "data/raw",
     "raw_archive_excluded_by_default": true,

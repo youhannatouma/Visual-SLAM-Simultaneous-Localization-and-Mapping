@@ -2,74 +2,74 @@
   "model_algorithm": "mlp",
   "threshold_local_rows": 50000,
   "dataset_rows": {
-    "train": 522,
-    "val": 111,
-    "test": 116,
-    "total": 749
+    "train": 531,
+    "val": 112,
+    "test": 119,
+    "total": 762
   },
   "accuracy": {
-    "best_val": 0.8108108108108109,
-    "test": 0.7155172413793104
+    "best_val": 0.7053571428571429,
+    "test": 0.7647058823529411
   },
-  "macro_f1": 0.7147326394406484,
+  "macro_f1": 0.7625540382899884,
   "per_class": {
     "AVOID_PERSON": {
-      "precision": 0.71875,
-      "recall": 0.7666666666666667,
-      "f1": 0.7419354838709677
+      "precision": 0.7714285714285715,
+      "recall": 0.9,
+      "f1": 0.8307692307692307
     },
     "MOVE_TO_CHAIR": {
-      "precision": 0.7037037037037037,
-      "recall": 0.6551724137931034,
-      "f1": 0.6785714285714286
+      "precision": 0.7857142857142857,
+      "recall": 0.7096774193548387,
+      "f1": 0.7457627118644068
     },
     "CHECK_TABLE": {
-      "precision": 0.6896551724137931,
+      "precision": 0.6666666666666666,
       "recall": 0.7407407407407407,
-      "f1": 0.7142857142857143
+      "f1": 0.7017543859649122
     },
     "EXPLORE": {
-      "precision": 0.75,
-      "recall": 0.7,
-      "f1": 0.7241379310344827
+      "precision": 0.8461538461538461,
+      "recall": 0.7096774193548387,
+      "f1": 0.7719298245614036
     }
   },
   "confusion_matrix": [
     [
-      23,
-      2,
-      4,
+      27,
+      1,
+      1,
       1
     ],
     [
-      6,
-      19,
       1,
+      22,
+      5,
       3
     ],
     [
-      1,
+      4,
       3,
       20,
-      3
+      0
     ],
     [
-      2,
       3,
+      2,
       4,
-      21
+      22
     ]
   ],
   "fresh_real_eval": {
     "path": "data/processed/fresh_real_eval.csv",
     "rows": 12,
-    "accuracy": 0.9166666666666666,
-    "macro_f1": 0.2391304347826087,
+    "accuracy": 1.0,
+    "macro_f1": 0.25,
     "per_class": {
       "AVOID_PERSON": {
         "precision": 1.0,
-        "recall": 0.9166666666666666,
-        "f1": 0.9565217391304348
+        "recall": 1.0,
+        "f1": 1.0
       },
       "MOVE_TO_CHAIR": {
         "precision": 0.0,
@@ -89,10 +89,10 @@
     },
     "confusion_matrix": [
       [
-        11,
+        12,
         0,
         0,
-        1
+        0
       ],
       [
         0,

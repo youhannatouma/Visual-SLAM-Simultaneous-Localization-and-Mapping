@@ -32,8 +32,8 @@
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 221,
-      "MOVE_TO_CHAIR": 189,
+      "AVOID_PERSON": 208,
+      "MOVE_TO_CHAIR": 202,
       "CHECK_TABLE": 170,
       "EXPLORE": 201
     }
@@ -94,9 +94,9 @@
     "f36"
   ],
   "rows": {
-    "train": 522,
-    "val": 111,
-    "test": 116,
-    "total": 749
+    "train": 531,
+    "val": 112,
+    "test": 119,
+    "total": 762
   }
 }

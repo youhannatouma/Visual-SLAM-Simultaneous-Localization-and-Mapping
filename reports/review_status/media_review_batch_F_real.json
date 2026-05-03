@@ -1,11 +1,11 @@
 {
-  "timestamp": 1777839679,
+  "timestamp": 1777840763,
   "output_csv": "data/raw/media_labeled_batch_F_real.csv",
   "review_file": "reports/media_review_batch_F_real.csv",
   "corrections_file": "reports/corrections_batch_F_real.csv",
   "status": "applied",
   "rows_total": 70,
-  "rows_relabeled": 10,
+  "rows_relabeled": 23,
   "rows_dropped": 113,
   "issues": []
 }
