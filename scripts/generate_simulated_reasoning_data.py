@@ -150,10 +150,10 @@ def main():
         for _ in range(args.rows_per_class):
             detections, motion_text = builder(rng)
             features = engine.extract_features(detections, FRAME_CENTER, FRAME_AREA, motion_text)
-            rows.append(features + [action])
+            rows.append(features + [action, "simulated"])
 
-    feature_count = len(rows[0]) - 1
-    columns = [f"f{i}" for i in range(feature_count)] + ["label"]
+    feature_count = len(rows[0]) - 2
+    columns = [f"f{i}" for i in range(feature_count)] + ["label", "source_type"]
     df = pd.DataFrame(rows, columns=columns).sample(frac=1.0, random_state=args.seed).reset_index(drop=True)
 
     os.makedirs(args.out_dir, exist_ok=True)

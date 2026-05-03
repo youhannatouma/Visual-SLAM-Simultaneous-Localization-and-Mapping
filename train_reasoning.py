@@ -26,10 +26,10 @@ class ReasoningDataset(Dataset):
         if "label" not in df.columns:
             raise ValueError(f"Dataset missing 'label' column: {csv_path}")
 
-        feature_cols = [c for c in df.columns if c.startswith("f")]
+        feature_cols = [c for c in df.columns if c.startswith("f") and c[1:].isdigit()]
         if not feature_cols:
             raise ValueError(f"No feature columns f0..fN found in {csv_path}")
-        feature_cols = sorted(feature_cols, key=lambda c: int(c[1:]) if c[1:].isdigit() else c)
+        feature_cols = sorted(feature_cols, key=lambda c: int(c[1:]))
 
         features_df = df[feature_cols].apply(pd.to_numeric, errors="coerce")
         labels_raw = df["label"].astype(str)
@@ -128,7 +128,37 @@ def save_confusion_matrix(confusion, output_path):
     plt.close(fig)
 
 
-def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch_size, lr):
+def evaluate_optional_dataset(model, csv_path, batch_size, device):
+    if not csv_path:
+        return None
+    if not os.path.exists(csv_path):
+        return None
+    dataset = ReasoningDataset(csv_path)
+    acc, y_true, y_pred = evaluate_model(model, dataset, batch_size, device)
+    confusion, precision, recall, f1, macro_f1 = compute_classification_metrics(
+        y_true, y_pred, len(ACTION_CLASSES)
+    )
+    return {
+        "path": csv_path,
+        "rows": len(dataset),
+        "accuracy": float(acc),
+        "macro_f1": float(macro_f1),
+        "per_class": {
+            ACTION_CLASSES[i]: {
+                "precision": precision[i],
+                "recall": recall[i],
+                "f1": f1[i],
+            }
+            for i in range(len(ACTION_CLASSES))
+        },
+        "confusion_matrix": confusion.tolist(),
+    }
+
+
+def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch_size, lr, fresh_real_eval_path, algorithm):
+    if algorithm.lower() != "mlp":
+        raise ValueError("Only MLP is supported for reasoning training in this project")
+
     train_dataset = ReasoningDataset(train_path)
     val_dataset = ReasoningDataset(val_path)
     test_dataset = ReasoningDataset(test_path)
@@ -149,7 +179,7 @@ def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     os.makedirs(report_dir, exist_ok=True)
 
-    model = ReasoningModel(train_dataset.feature_size)
+    model = ReasoningModel(train_dataset.feature_size)  # MLP
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -216,6 +246,7 @@ def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch
     save_confusion_matrix(confusion, cm_path)
 
     metrics = {
+        "model_algorithm": "mlp",
         "threshold_local_rows": HUGE_DATASET_THRESHOLD,
         "dataset_rows": {
             "train": len(train_dataset),
@@ -238,6 +269,15 @@ def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch
         },
         "confusion_matrix": confusion.tolist(),
     }
+    fresh_real_metrics = evaluate_optional_dataset(model, fresh_real_eval_path, batch_size, device)
+    if fresh_real_metrics is not None:
+        metrics["fresh_real_eval"] = fresh_real_metrics
+        print(
+            "Fresh real eval: "
+            f"accuracy={fresh_real_metrics['accuracy']:.3f} "
+            f"macro_f1={fresh_real_metrics['macro_f1']:.3f} "
+            f"rows={fresh_real_metrics['rows']}"
+        )
 
     metrics_path = os.path.join(report_dir, "metrics.json")
     with open(metrics_path, "w", encoding="utf-8") as f:
@@ -257,6 +297,8 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--fresh-real-eval", default="", help="Optional held-out fresh real eval CSV")
+    parser.add_argument("--algorithm", default="mlp", choices=["mlp"], help="Training algorithm (locked to MLP)")
     return parser.parse_args()
 
 
@@ -271,4 +313,6 @@ if __name__ == "__main__":
         epochs=args.epochs,
         batch_size=args.batch_size,
         lr=args.lr,
+        fresh_real_eval_path=args.fresh_real_eval,
+        algorithm=args.algorithm,
     )

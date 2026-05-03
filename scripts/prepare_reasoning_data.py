@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
+REAL_SOURCE_TYPES = {"real_media", "manual_live"}
+SYNTHETIC_SOURCE_TYPES = {"synthetic", "simulated", "rebalance"}
 
 
 def parse_args():
@@ -23,6 +25,23 @@ def parse_args():
         type=int,
         default=50,
         help="Minimum samples required per action class after cleaning (fails if unmet)",
+    )
+    parser.add_argument(
+        "--min-real-share",
+        type=float,
+        default=0.6,
+        help="Minimum required share of real rows (manual_live + real_media) after cleaning",
+    )
+    parser.add_argument(
+        "--max-synthetic-share",
+        type=float,
+        default=0.4,
+        help="Maximum allowed share of synthetic/simulated/rebalance rows after cleaning",
+    )
+    parser.add_argument(
+        "--holdout-latest-real-source",
+        action="store_true",
+        help="Hold out the latest real source file into data/processed/fresh_real_eval.csv",
     )
     return parser.parse_args()
 
@@ -41,16 +60,34 @@ def load_raw_frames(pattern):
     return pd.concat(frames, ignore_index=True), files
 
 
+def infer_source_type(source_file, explicit_value=None):
+    if isinstance(explicit_value, str) and explicit_value.strip():
+        return explicit_value.strip().lower()
+
+    name = os.path.basename(str(source_file)).lower()
+    if name.startswith("session_") or "reasoning_data" in name:
+        return "manual_live"
+    if "media_labeled" in name:
+        return "real_media"
+    if "simulated" in name:
+        return "simulated"
+    if "balanced_synthetic" in name or "synthetic" in name:
+        return "synthetic"
+    if "rebalance_patch" in name:
+        return "rebalance"
+    return "unknown"
+
+
 def validate_and_clean(df):
     if "label" not in df.columns:
         raise ValueError("Input CSV must include a 'label' column")
 
-    feature_cols = [c for c in df.columns if c.startswith("f")]
+    feature_cols = [c for c in df.columns if c.startswith("f") and c[1:].isdigit()]
     if not feature_cols:
         raise ValueError("Input CSV must include feature columns named f0..fN")
 
     # Stable numeric order for feature columns: f0, f1, ...
-    feature_cols = sorted(feature_cols, key=lambda c: int(c[1:]) if c[1:].isdigit() else c)
+    feature_cols = sorted(feature_cols, key=lambda c: int(c[1:]))
 
     working = df.copy()
     for col in feature_cols:
@@ -67,6 +104,14 @@ def validate_and_clean(df):
     before_label_filter = len(working)
     working = working[working["label"].isin(ACTION_CLASSES)].copy()
     rows_after_label_filter = len(working)
+
+    working["source_type"] = [
+        infer_source_type(source_file, explicit)
+        for source_file, explicit in zip(
+            working["__source_file"],
+            working["source_type"] if "source_type" in working.columns else [None] * len(working),
+        )
+    ]
 
     before_dedup = len(working)
     working = working.drop_duplicates(subset=required_cols, keep="first")
@@ -101,6 +146,35 @@ def enforce_minimum_per_class(df, minimum):
             f"Need at least {minimum} each, but got: {details}"
         )
     return counts
+
+
+def enforce_source_quality(df, min_real_share, max_synthetic_share):
+    total = len(df)
+    real_rows = int(df["source_type"].isin(REAL_SOURCE_TYPES).sum())
+    synthetic_rows = int(df["source_type"].isin(SYNTHETIC_SOURCE_TYPES).sum())
+    real_share = (real_rows / total) if total else 0.0
+    synthetic_share = (synthetic_rows / total) if total else 0.0
+
+    if real_share < min_real_share:
+        raise ValueError(
+            "Dataset quality gate failed: real data share too low. "
+            f"Need >= {min_real_share:.3f}, got {real_share:.3f}"
+        )
+    if synthetic_share > max_synthetic_share:
+        raise ValueError(
+            "Dataset quality gate failed: synthetic share too high. "
+            f"Need <= {max_synthetic_share:.3f}, got {synthetic_share:.3f}"
+        )
+
+    return {
+        "real_rows": int(real_rows),
+        "synthetic_rows": int(synthetic_rows),
+        "total_clean": int(total),
+        "real_share": float(real_share),
+        "synthetic_share": float(synthetic_share),
+        "min_real_share": float(min_real_share),
+        "max_synthetic_share": float(max_synthetic_share),
+    }
 
 
 def print_distribution(df, title):
@@ -213,17 +287,45 @@ def save_outputs(train_df, val_df, test_df, out_dir):
     return train_path, val_path, test_path
 
 
+def holdout_latest_real_source(df, out_dir):
+    real_mask = df["source_type"].isin(REAL_SOURCE_TYPES)
+    real_df = df.loc[real_mask].copy()
+    if real_df.empty:
+        raise ValueError("Cannot hold out latest real source: no real rows found")
+
+    # Pick latest source by filename lexical order (timestamped filenames).
+    latest_source = sorted(real_df["__source_file"].unique())[-1]
+    holdout_df = real_df.loc[real_df["__source_file"] == latest_source].copy()
+    remaining_df = df.loc[df["__source_file"] != latest_source].copy()
+    if holdout_df.empty or remaining_df.empty:
+        raise ValueError("Invalid holdout split: holdout or remaining set is empty")
+
+    holdout_path = os.path.join(out_dir, "fresh_real_eval.csv")
+    holdout_df.to_csv(holdout_path, index=False)
+    return remaining_df, holdout_path, latest_source, int(len(holdout_df))
+
+
 def main():
     args = parse_args()
 
     merged_df, files = load_raw_frames(args.input_glob)
     clean_df, feature_cols, clean_summary = validate_and_clean(merged_df)
     counts_after_clean = enforce_minimum_per_class(clean_df, args.min_per_class)
+    source_quality = enforce_source_quality(clean_df, args.min_real_share, args.max_synthetic_share)
 
     print(f"Loaded {len(files)} file(s)")
     print_distribution(clean_df, "Class distribution before balancing")
 
-    balanced_df = balance_classes(clean_df, args.balance, args.seed)
+    holdout_path = ""
+    holdout_source = ""
+    holdout_rows = 0
+    split_input_df = clean_df
+    if args.holdout_latest_real_source:
+        split_input_df, holdout_path, holdout_source, holdout_rows = holdout_latest_real_source(clean_df, args.out_dir)
+        print(f"Held out latest real source: {holdout_source} ({holdout_rows} rows)")
+        print(f"Saved fresh real eval set: {holdout_path}")
+
+    balanced_df = balance_classes(split_input_df, args.balance, args.seed)
     print_distribution(balanced_df, f"Class distribution after balancing ({args.balance})")
 
     train_df, val_df, test_df = stratified_split(
@@ -251,6 +353,13 @@ def main():
             "required": int(args.min_per_class),
             "counts_after_clean": {label: int(counts_after_clean[label]) for label in ACTION_CLASSES},
         },
+        "source_quality": source_quality,
+        "holdout_latest_real_source": {
+            "enabled": bool(args.holdout_latest_real_source),
+            "source_file": holdout_source,
+            "rows": int(holdout_rows),
+            "path": holdout_path,
+        },
         "feature_columns": feature_cols,
         "rows": {
             "train": int(len(train_df)),
@@ -270,6 +379,8 @@ def main():
     print(f"  Val:   {val_path} ({len(val_df)} rows)")
     print(f"  Test:  {test_path} ({len(test_df)} rows)")
     print(f"  Meta:  {metadata_path}")
+    if holdout_path:
+        print(f"  Fresh real eval: {holdout_path} ({holdout_rows} rows)")
 
 
 if __name__ == "__main__":

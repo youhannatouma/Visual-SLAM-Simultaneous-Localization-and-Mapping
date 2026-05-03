@@ -227,19 +227,65 @@ Use this checklist before training:
    * empty scenes for `EXPLORE`
 2. Keep labels balanced across all 4 actions (`a/c/t/e`) instead of over-logging one key.
 3. Save session CSVs in `data/raw/` (multiple files are supported).
-4. Audit quality first:
+4. Audit quality first (real-data-first gates):
 
 ```bash
-python scripts/audit_reasoning_data.py --input-glob "data/raw/*.csv" --min-per-class 50 --max-class-imbalance-ratio 2.0 --report reports/dataset_audit.json
+python scripts/audit_reasoning_data.py --input-glob "data/raw/*.csv" --min-per-class 50 --max-class-imbalance-ratio 1.3 --min-real-share 0.6 --max-synthetic-share 0.4 --report reports/dataset_audit.json
 ```
 
 5. Prepare processed splits with a quality gate:
 
 ```bash
-python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --min-per-class 50 --seed 42
+python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --min-per-class 50 --min-real-share 0.6 --max-synthetic-share 0.4 --holdout-latest-real-source --seed 42
 ```
 
 If any class is below `--min-per-class`, preprocessing fails and tells you which labels need more data.
+
+6. Run the full guarded pipeline (audit -> preprocess -> train -> promotion checks):
+
+```bash
+scripts/run_reasoning_training_pipeline.sh --python-bin .venv311/bin/python
+```
+
+### Data source tracking
+
+Each row is tagged with a `source_type`:
+
+* `manual_live` (from `main.py` key labeling)
+* `real_media` (from `build_reasoning_data_from_media.py`)
+* `synthetic`, `simulated`, `rebalance`
+
+Audit now reports class distribution by source and enforces:
+
+* real share >= `0.6`
+* synthetic/simulated/rebalance share <= `0.4`
+* class imbalance <= `1.3` before balancing
+
+### Lightweight media label review
+
+When building from media, a review file is exported automatically:
+
+```bash
+python scripts/build_reasoning_data_from_media.py --media-dir /path/to/images_or_videos --video-stride 10
+```
+
+This creates:
+
+* `data/raw/media_labeled_<timestamp>.csv`
+* `reports/media_review_<timestamp>.csv` (sample + hard cases for manual correction)
+
+You can apply review corrections by passing:
+
+```bash
+python scripts/build_reasoning_data_from_media.py --media-dir /path/to/images_or_videos --review-corrections reports/your_review_corrections.csv
+```
+
+Correction CSV columns: `row_id,final_label,drop_row`.
+
+### Training algorithm policy
+
+`train_reasoning.py` is locked to **MLP** (`--algorithm mlp` only).  
+This project always trains reasoning with a multilayer perceptron.
 
 ---
 
