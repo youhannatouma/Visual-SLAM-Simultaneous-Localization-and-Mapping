@@ -1,0 +1,94 @@
+{
+  "input_glob": "data/raw/*.csv",
+  "input_files": [
+    "data/raw/curated_real_balanced.csv"
+  ],
+  "balance": "cap",
+  "seed": 42,
+  "ratios": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "cleaning": {
+    "rows_initial": 480,
+    "rows_after_dropna": 480,
+    "rows_after_finite_check": 480,
+    "rows_after_label_filter": 480,
+    "rows_after_dedup": 480,
+    "dropped_missing_required": 0,
+    "dropped_non_finite": 0,
+    "dropped_unknown_label": 0,
+    "dropped_duplicates": 0,
+    "feature_count": 37
+  },
+  "minimum_per_class": {
+    "required": 50,
+    "counts_after_clean": {
+      "AVOID_PERSON": 120,
+      "MOVE_TO_CHAIR": 120,
+      "CHECK_TABLE": 120,
+      "EXPLORE": 120
+    }
+  },
+  "source_quality": {
+    "real_rows": 480,
+    "synthetic_rows": 0,
+    "total_clean": 480,
+    "real_share": 1.0,
+    "synthetic_share": 0.0,
+    "min_real_share": 0.6,
+    "max_synthetic_share": 0.4
+  },
+  "holdout_latest_real_source": {
+    "enabled": false,
+    "source_file": "",
+    "rows": 0,
+    "path": ""
+  },
+  "feature_columns": [
+    "f0",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+    "f13",
+    "f14",
+    "f15",
+    "f16",
+    "f17",
+    "f18",
+    "f19",
+    "f20",
+    "f21",
+    "f22",
+    "f23",
+    "f24",
+    "f25",
+    "f26",
+    "f27",
+    "f28",
+    "f29",
+    "f30",
+    "f31",
+    "f32",
+    "f33",
+    "f34",
+    "f35",
+    "f36"
+  ],
+  "rows": {
+    "train": 336,
+    "val": 72,
+    "test": 72,
+    "total": 480
+  }
+}

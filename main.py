@@ -1,3 +1,6 @@
+import os
+import time
+
 import cv2
 from ultralytics import YOLO
 from reasoning import ReasoningEngine
@@ -19,6 +22,8 @@ prev_des = None
 decision = "Initializing..."
 use_model = True
 label_message = ""
+session_csv = f"data/raw/session_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+os.makedirs("data/raw", exist_ok=True)
 
 # -------------------------------
 # MAIN LOOP
@@ -191,6 +196,9 @@ while True:
     cv2.putText(annotated_frame, label_message, (20, 235),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                 (0, 255, 0), 1)
+    cv2.putText(annotated_frame, f"Saving labels to: {session_csv}", (20, 260),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                (200, 200, 200), 1)
 
     # -------------------------------
     # DISPLAY
@@ -204,16 +212,16 @@ while True:
         use_model = not use_model
         label_message = f"Model mode {'ON' if use_model else 'OFF'}"
     elif key == ord('a'):
-        engine.log_example(detections_list, frame_center, frame_area, motion_text, "AVOID_PERSON")
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "AVOID_PERSON", session_csv)
         label_message = "Saved label: AVOID_PERSON"
     elif key == ord('c'):
-        engine.log_example(detections_list, frame_center, frame_area, motion_text, "MOVE_TO_CHAIR")
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "MOVE_TO_CHAIR", session_csv)
         label_message = "Saved label: MOVE_TO_CHAIR"
     elif key == ord('t'):
-        engine.log_example(detections_list, frame_center, frame_area, motion_text, "CHECK_TABLE")
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "CHECK_TABLE", session_csv)
         label_message = "Saved label: CHECK_TABLE"
     elif key == ord('e'):
-        engine.log_example(detections_list, frame_center, frame_area, motion_text, "EXPLORE")
+        engine.log_example(detections_list, frame_center, frame_area, motion_text, "EXPLORE", session_csv)
         label_message = "Saved label: EXPLORE"
 
 # -------------------------------

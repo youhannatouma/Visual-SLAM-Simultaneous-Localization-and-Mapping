@@ -257,11 +257,20 @@ class ReasoningEngine:
         self.state = "EXPLORE"
         return "EXPLORE AND SEARCH"
 
-    def log_example(self, detections, frame_center, frame_area, motion_text, action_label, output_path="data/reasoning_data.csv"):
+    def log_example(
+        self,
+        detections,
+        frame_center,
+        frame_area,
+        motion_text,
+        action_label,
+        output_path="data/raw/reasoning_data.csv",
+        source_type="manual_live",
+    ):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         features = self.extract_features(detections, frame_center, frame_area, motion_text)
-        row = features + [action_label]
-        header = [f"f{i}" for i in range(len(features))] + ["label"]
+        row = features + [action_label, source_type]
+        header = [f"f{i}" for i in range(len(features))] + ["label", "source_type"]
 
         write_header = not os.path.exists(output_path)
         with open(output_path, mode="a", newline="", encoding="utf-8") as csv_file:

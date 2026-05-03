@@ -21,3 +21,14 @@ Thumbs.db
 
 # Temporary files
 *.tmp
+# Local virtualenvs and local install files
+.venv*/
+requirements.local.txt
+<<<<<<< HEAD
+=======
+
+.venv*/
+__pycache__/
+*.pyc
+requirements.local.txt
+>>>>>>> 11bf97fd (Keep project changes, exclude local environment artifacts)
