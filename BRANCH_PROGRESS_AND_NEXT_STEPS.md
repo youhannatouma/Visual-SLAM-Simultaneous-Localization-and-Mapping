@@ -1,109 +1,146 @@
 # Branch Summary: `cwehbe`
 
-## What Has Been Done
+## Sprint Outcome (As of 2026-05-03)
 
-### 1. End-to-end reasoning data pipeline added
-- Added raw data audit script with quality gates:
-  - `scripts/audit_reasoning_data.py`
-- Added preprocessing/splitting script with balancing and validation:
-  - `scripts/prepare_reasoning_data.py`
-- Added one-command orchestrator:
+The branch moved from a blocked holdout workflow to a fully runnable strict pipeline:
+
+- Blocker resolved: the project now has at least 2 independent real batches.
+- Strict data audit now passes under policy gates.
+- End-to-end guarded pipeline completes (audit -> preprocess -> manifest -> train -> evaluate -> promotion).
+- MLP-only training remains enforced.
+
+Latest full pipeline run completed successfully with:
+
+- `ready_for_training=true`
+- test accuracy: `0.889`
+- test macro F1: `0.889`
+- fresh-real holdout accuracy: `0.256`
+- fresh-real holdout macro F1: `0.197`
+
+---
+
+## What Was Implemented
+
+### 1. Governance + guardrails now active in pipeline
+- Added artifact/disk preflight and retention management:
+  - `scripts/manage_artifacts.py`
+- Added manifest/changelog snapshot writer:
+  - `scripts/create_dataset_manifest.py`
+- Integrated into pipeline orchestrator:
   - `scripts/run_reasoning_training_pipeline.sh`
 
-### 2. Data quality controls significantly strengthened
-- Added minimum-per-class gate.
-- Added stricter imbalance checks.
-- Added source-aware quality gates:
-  - minimum real-data share
-  - maximum synthetic-data share
-- Added source distribution reporting by class in audit output.
+### 2. Dataset quality controls strengthened
+- Audit gate coverage includes:
+  - per-class minimum checks
+  - imbalance threshold checks
+  - real/synthetic share checks
+  - two-independent-real-batches check
+  - scenario/class distribution reporting
+- Script:
+  - `scripts/audit_reasoning_data.py`
 
-### 3. Data source tracking implemented
-- `source_type` is now tracked across ingestion/generation/logging flows.
-- Source types used:
-  - `manual_live`
-  - `real_media`
-  - `synthetic`
-  - `simulated`
-  - `rebalance`
-
-### 4. Media ingestion capability implemented
-- Added automatic labeling from image/video folders:
+### 3. Review/correction loop is now enforced in flow
+- Media ingestion supports review export + correction application:
   - `scripts/build_reasoning_data_from_media.py`
-- Added lightweight review export for manual correction sampling.
-- Added correction ingestion support for reviewed labels.
+- Review status artifacts are generated under:
+  - `reports/review_status/`
 
-### 5. Synthetic/simulated generation utilities added
-- Added simulation generator for large controlled datasets:
-  - `scripts/generate_simulated_reasoning_data.py`
-- Added balancing and patching flows used during experiments.
+### 4. Preprocessing and holdout behavior hardened
+- Holdout workflow and quality checks are integrated in preprocessing:
+  - `scripts/prepare_reasoning_data.py`
+- Fresh real holdout is generated during pipeline when policy prerequisites are satisfied.
 
-### 6. Training path constrained to MLP
-- `train_reasoning.py` now enforces MLP usage (`--algorithm mlp`).
-- Added metrics structure improvements and optional fresh-real evaluation support.
-
-### 7. Live collection path aligned with pipeline
-- `main.py` + `reasoning.py` updated so manual labeling writes compatible CSV schema.
-- Session outputs now align better with raw pipeline expectations.
-
-### 8. Documentation updated
-- `README.md` updated with higher-quality dataset workflow, audit/prep commands, and stricter gate usage.
+### 5. Real batch ingestion completed and made policy-compliant
+- Two independent real batches were produced and used.
+- Corrected balanced batch files are now present in `data/raw/`:
+  - `media_labeled_batch_A_real_corrected.csv`
+  - `media_labeled_batch_B_real_corrected.csv`
+- Older skewed media-labeled files were moved to `data/raw_archive/`.
 
 ---
 
-## Current State
-- Latest strict audit can be made to pass with curated real-only balanced data.
-- Current training completed using MLP on curated real set.
-- Resulting model metrics are moderate-good but still limited by dataset breadth/variety and small final curated size.
+## Current Data/Training State
+
+### Active raw training inputs (current cycle)
+- `data/raw/curated_real_balanced.csv`
+- `data/raw/media_labeled_batch_A_real_corrected.csv`
+- `data/raw/media_labeled_batch_B_real_corrected.csv`
+
+### Latest strict audit result
+- files: `3`
+- raw rows: `816`
+- clean rows: `648`
+- class counts:
+  - `AVOID_PERSON`: `160`
+  - `MOVE_TO_CHAIR`: `168`
+  - `CHECK_TABLE`: `160`
+  - `EXPLORE`: `160`
+- imbalance ratio: `1.05` (passes `<=1.3`)
+- real share: `1.000` (passes `>=0.6`)
+- synthetic share: `0.000` (passes `<=0.4`)
+- independent real batches/sources: `2` (passes)
+
+### Latest model evaluation
+- Test set:
+  - accuracy `0.889`
+  - macro F1 `0.889`
+- Fresh real holdout:
+  - accuracy `0.256`
+  - macro F1 `0.197`
 
 ---
 
-## What Is Missing / Gaps
+## Main Risk Right Now
 
-### Data & evaluation gaps
-- Real-world data volume is still limited for robust generalization.
-- Need broader real scenarios for difficult edge cases:
-  - cluttered rooms
+The pipeline is operational and policy-compliant, but generalization to fresh-real data is weak.
+
+Interpretation:
+- In-split performance is good.
+- Out-of-source robustness is currently not good enough.
+
+This is now the primary bottleneck for production confidence.
+
+---
+
+## Next Steps (Priority Order)
+
+1. Expand real capture diversity before next promotion decision.
+- Collect at least 2 new independent real batches (`batch_C_real`, `batch_D_real`).
+- Focus on underrepresented real-world conditions:
   - low light
-  - partial occlusions
-  - mixed chair/table scenes
-  - long-range targets
-- Fresh-real holdout workflow needs at least 2+ independent real source batches per cycle.
+  - clutter
+  - occlusion
+  - mixed chair/table
+  - longer distance scenes
 
-### Process gaps
-- Need consistent dataset versioning (naming, changelog, reproducible snapshots).
-- Need stable policy on when archived raw data is reintroduced vs excluded.
-- Need regular manual review loop for auto-labeled media outputs.
+2. Improve label quality with targeted review pass.
+- Run mandatory review sampling on new media review files.
+- Apply corrections before preprocessing each cycle.
+- Track correction application in review status artifacts.
 
-### Infrastructure gaps
-- Disk pressure is a recurring bottleneck during media ingestion.
-- Need cleanup/retention policy for large media and intermediate artifacts.
+3. Keep strict gates unchanged.
+- Continue enforcing:
+  - imbalance <= `1.3`
+  - real share >= `0.6`
+  - synthetic share <= `0.4`
+  - min-per-class gate
+  - two-independent-real-batches gate for holdout
 
----
+4. Re-run guarded pipeline and compare against previous run.
+- Preserve MLP-only constraint.
+- Compare:
+  - test accuracy and macro F1
+  - class-level F1 (`CHECK_TABLE`, `MOVE_TO_CHAIR` especially)
+  - fresh-real holdout metrics
 
-## Where To Move Next
-
-### Immediate next iteration (recommended)
-1. Collect + ingest a larger **real-only** dataset (target: at least 3k–5k rows).
-2. Preserve strict quality gates:
-   - imbalance <= 1.3
-   - real share >= 0.6
-   - synthetic share <= 0.4
-3. Build two real batches (Batch A / Batch B), hold out newest batch as fresh real eval.
-4. Retrain with MLP and compare against previous metrics using promotion rules.
-5. Only promote model if no unacceptable regression on:
-   - overall test accuracy
-   - `CHECK_TABLE` and `MOVE_TO_CHAIR` F1
-   - fresh-real accuracy
-
-### Short-term hardening
-- Add dataset version manifest (`dataset_version`, counts, source mix, hashes).
-- Add automated cleanup helper for stale media/report artifacts.
-- Add dashboard-like report summary (single markdown/json snapshot per run).
+5. Promotion policy for upcoming cycle.
+- Do not treat this cycle as final generalization success.
+- Require fresh-real non-regression and meaningful improvement before final promotion sign-off.
 
 ---
 
 ## Important Constraints To Keep
-- Continue training with **MLP only** for reasoning model.
-- Keep strict data gates enabled in audit/prep/pipeline.
-- Prefer real data growth over synthetic balancing for production-quality behavior.
+
+- Keep reasoning model training as **MLP only**.
+- Keep strict audit/preprocess/pipeline gates enabled.
+- Keep default training source as real-first raw data (`data/raw`) with archived data excluded unless explicitly opted in for experiment mode.
