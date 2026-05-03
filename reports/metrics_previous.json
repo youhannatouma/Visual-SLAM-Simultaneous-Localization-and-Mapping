@@ -8,7 +8,7 @@
     "total": 480
   },
   "accuracy": {
-    "best_val": 0.9166666666666666,
+    "best_val": 0.9027777777777778,
     "test": 0.8888888888888888
   },
   "macro_f1": 0.8888030888030888,
@@ -59,59 +59,5 @@
       1,
       16
     ]
-  ],
-  "fresh_real_eval": {
-    "path": "data/processed/fresh_real_eval.csv",
-    "rows": 168,
-    "accuracy": 0.25595238095238093,
-    "macro_f1": 0.19703947368421054,
-    "per_class": {
-      "AVOID_PERSON": {
-        "precision": 0.125,
-        "recall": 0.125,
-        "f1": 0.125
-      },
-      "MOVE_TO_CHAIR": {
-        "precision": 0.35714285714285715,
-        "recall": 0.20833333333333334,
-        "f1": 0.2631578947368421
-      },
-      "CHECK_TABLE": {
-        "precision": 0.28,
-        "recall": 0.7,
-        "f1": 0.4
-      },
-      "EXPLORE": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0
-      }
-    },
-    "confusion_matrix": [
-      [
-        5,
-        4,
-        31,
-        0
-      ],
-      [
-        17,
-        10,
-        21,
-        0
-      ],
-      [
-        4,
-        8,
-        28,
-        0
-      ],
-      [
-        14,
-        6,
-        20,
-        0
-      ]
-    ]
-  }
+  ]
 }

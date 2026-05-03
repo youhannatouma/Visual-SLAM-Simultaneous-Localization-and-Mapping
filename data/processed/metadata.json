@@ -1,7 +1,9 @@
 {
   "input_glob": "data/raw/*.csv",
   "input_files": [
-    "data/raw/curated_real_balanced.csv"
+    "data/raw/curated_real_balanced.csv",
+    "data/raw/media_labeled_batch_A_real_corrected.csv",
+    "data/raw/media_labeled_batch_B_real_corrected.csv"
   ],
   "balance": "cap",
   "seed": 42,
@@ -11,40 +13,41 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 480,
-    "rows_after_dropna": 480,
-    "rows_after_finite_check": 480,
-    "rows_after_label_filter": 480,
-    "rows_after_dedup": 480,
+    "rows_initial": 816,
+    "rows_after_dropna": 816,
+    "rows_after_finite_check": 816,
+    "rows_after_label_filter": 816,
+    "rows_after_dedup": 648,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 0,
+    "dropped_duplicates": 168,
     "feature_count": 37
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 120,
-      "MOVE_TO_CHAIR": 120,
-      "CHECK_TABLE": 120,
-      "EXPLORE": 120
+      "AVOID_PERSON": 160,
+      "MOVE_TO_CHAIR": 168,
+      "CHECK_TABLE": 160,
+      "EXPLORE": 160
     }
   },
   "source_quality": {
-    "real_rows": 480,
+    "real_rows": 648,
     "synthetic_rows": 0,
-    "total_clean": 480,
+    "total_clean": 648,
     "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
     "max_synthetic_share": 0.4
   },
   "holdout_latest_real_source": {
-    "enabled": false,
-    "source_file": "",
-    "rows": 0,
-    "path": ""
+    "enabled": true,
+    "source_file": "media_labeled_batch_A_real_corrected.csv",
+    "rows": 168,
+    "path": "data/processed/fresh_real_eval.csv",
+    "require_two_real_batches_for_holdout": true
   },
   "feature_columns": [
     "f0",

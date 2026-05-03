@@ -287,6 +287,84 @@ Correction CSV columns: `row_id,final_label,drop_row`.
 `train_reasoning.py` is locked to **MLP** (`--algorithm mlp` only).  
 This project always trains reasoning with a multilayer perceptron.
 
+## Real-Only Governance & Operations
+
+### Default data policy
+
+- Default training source is `data/raw/*.csv` (real-only workflow).
+- `data/raw_archive` is excluded by default and only allowed in explicit experiments.
+- Synthetic/simulated data should not enter default production training cycles.
+
+### Batch-aware ingestion and coverage
+
+Use `--batch-id` and `--scenario` when ingesting media:
+
+```bash
+python scripts/build_reasoning_data_from_media.py \
+  --media-dir /path/to/media \
+  --batch-id batch_A_real \
+  --scenario low_light \
+  --video-stride 10
+```
+
+Outputs now include:
+
+- `reports/batch_coverage_<timestamp>.json` (scenario x class counts)
+- `reports/review_status/<review_file_stem>.json` (`pending`/`applied`)
+
+### Mandatory review gate
+
+Preprocessing can enforce that review corrections are applied before training:
+
+```bash
+python scripts/prepare_reasoning_data.py \
+  --input-glob "data/raw/*.csv" \
+  --out-dir data/processed \
+  --enforce-review-applied \
+  --holdout-latest-real-source \
+  --require-two-real-batches-for-holdout
+```
+
+### Dataset manifest & changelog snapshot
+
+Generate immutable dataset metadata for each cycle:
+
+```bash
+python scripts/create_dataset_manifest.py \
+  --input-glob "data/raw/*.csv" \
+  --processed-dir data/processed \
+  --manifest-path data/manifest/dataset_manifest.json \
+  --changelog-path data/manifest/CHANGELOG.md
+```
+
+Capture plan template:
+
+- `data/manifest/capture_plan_template.json`
+
+### Disk guard and aggressive retention
+
+Preflight + prune + budget report:
+
+```bash
+python scripts/manage_artifacts.py --min-free-gb 1.0 --prune --budget-report reports/artifact_budget.json
+```
+
+### End-to-end guarded run
+
+```bash
+scripts/run_reasoning_training_pipeline.sh --python-bin .venv311/bin/python
+```
+
+This run now enforces:
+
+- strict audit gates
+- two independent real batches
+- review applied gate
+- fresh real holdout policy
+- dataset manifest snapshot
+- disk preflight and retention
+- MLP-only training with promotion checks
+
 ---
 
 ## �📄 License

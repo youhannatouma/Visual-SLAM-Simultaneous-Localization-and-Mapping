@@ -1,0 +1,45 @@
+{
+  "plan_name": "real_data_cycle_template",
+  "batches": [
+    {
+      "batch_id": "batch_A_real",
+      "scenarios": {
+        "clutter": {
+          "AVOID_PERSON": 80,
+          "MOVE_TO_CHAIR": 80,
+          "CHECK_TABLE": 80,
+          "EXPLORE": 80
+        },
+        "low_light": {
+          "AVOID_PERSON": 60,
+          "MOVE_TO_CHAIR": 60,
+          "CHECK_TABLE": 60,
+          "EXPLORE": 60
+        },
+        "occlusion": {
+          "AVOID_PERSON": 60,
+          "MOVE_TO_CHAIR": 60,
+          "CHECK_TABLE": 60,
+          "EXPLORE": 60
+        }
+      }
+    },
+    {
+      "batch_id": "batch_B_real",
+      "scenarios": {
+        "mixed": {
+          "AVOID_PERSON": 80,
+          "MOVE_TO_CHAIR": 80,
+          "CHECK_TABLE": 80,
+          "EXPLORE": 80
+        },
+        "long_range": {
+          "AVOID_PERSON": 60,
+          "MOVE_TO_CHAIR": 60,
+          "CHECK_TABLE": 60,
+          "EXPLORE": 60
+        }
+      }
+    }
+  ]
+}

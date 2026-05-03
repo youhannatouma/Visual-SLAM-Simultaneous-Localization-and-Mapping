@@ -1,0 +1,11 @@
+{
+  "timestamp": 1777827448,
+  "output_csv": "data/raw/media_labeled_20260503_195002.csv",
+  "review_file": "reports/media_review_20260503_195002.csv",
+  "corrections_file": "",
+  "status": "pending",
+  "rows_total": 900,
+  "rows_relabeled": 0,
+  "rows_dropped": 0,
+  "issues": []
+}

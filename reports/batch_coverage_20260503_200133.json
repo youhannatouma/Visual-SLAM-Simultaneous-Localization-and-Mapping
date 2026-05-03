@@ -1,0 +1,26 @@
+{
+  "timestamp": 1777827813,
+  "batch_id": "batch_B_real",
+  "scenario": "low_light",
+  "rows_total": 168,
+  "scenario_class_counts": [
+    {
+      "batch_id": "batch_B_real",
+      "scenario": "low_light",
+      "label": "AVOID_PERSON",
+      "count": 140
+    },
+    {
+      "batch_id": "batch_B_real",
+      "scenario": "low_light",
+      "label": "CHECK_TABLE",
+      "count": 1
+    },
+    {
+      "batch_id": "batch_B_real",
+      "scenario": "low_light",
+      "label": "MOVE_TO_CHAIR",
+      "count": 27
+    }
+  ]
+}

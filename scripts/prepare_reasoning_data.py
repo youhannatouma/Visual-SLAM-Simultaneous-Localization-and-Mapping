@@ -2,6 +2,7 @@ import argparse
 import glob
 import json
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -42,6 +43,16 @@ def parse_args():
         "--holdout-latest-real-source",
         action="store_true",
         help="Hold out the latest real source file into data/processed/fresh_real_eval.csv",
+    )
+    parser.add_argument(
+        "--enforce-review-applied",
+        action="store_true",
+        help="Fail if pending review status exists for input CSVs",
+    )
+    parser.add_argument(
+        "--require-two-real-batches-for-holdout",
+        action="store_true",
+        help="When holdout is enabled, require at least 2 independent real batches/sources",
     )
     return parser.parse_args()
 
@@ -305,10 +316,37 @@ def holdout_latest_real_source(df, out_dir):
     return remaining_df, holdout_path, latest_source, int(len(holdout_df))
 
 
+def enforce_review_status(input_files):
+    status_dir = Path("reports/review_status")
+    if not status_dir.exists():
+        return
+    input_set = {os.path.basename(x) for x in input_files}
+    pending = []
+    for status_file in sorted(status_dir.glob("*.json")):
+        try:
+            payload = json.loads(status_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        out_csv = payload.get("output_csv", "")
+        status = str(payload.get("status", "")).lower()
+        if not out_csv:
+            continue
+        if os.path.basename(out_csv) in input_set and status != "applied":
+            pending.append((status_file.name, os.path.basename(out_csv), status))
+    if pending:
+        details = ", ".join([f"{sfile}:{csv_name}:{status}" for sfile, csv_name, status in pending])
+        raise ValueError(
+            "Review gate failed: unapplied review statuses detected for current inputs. "
+            f"Details: {details}"
+        )
+
+
 def main():
     args = parse_args()
 
     merged_df, files = load_raw_frames(args.input_glob)
+    if args.enforce_review_applied:
+        enforce_review_status(files)
     clean_df, feature_cols, clean_summary = validate_and_clean(merged_df)
     counts_after_clean = enforce_minimum_per_class(clean_df, args.min_per_class)
     source_quality = enforce_source_quality(clean_df, args.min_real_share, args.max_synthetic_share)
@@ -321,6 +359,21 @@ def main():
     holdout_rows = 0
     split_input_df = clean_df
     if args.holdout_latest_real_source:
+        if args.require_two_real_batches_for_holdout:
+            real_df = clean_df[clean_df["source_type"].isin(REAL_SOURCE_TYPES)]
+            batch_col = "batch_id" if "batch_id" in real_df.columns else None
+            independent_units = set()
+            if batch_col is not None:
+                independent_units = {
+                    str(x).strip() for x in real_df[batch_col].dropna().astype(str).tolist() if str(x).strip()
+                }
+            if len(independent_units) < 2:
+                independent_units = set(real_df["__source_file"].astype(str).tolist())
+            if len(independent_units) < 2:
+                raise ValueError(
+                    "Holdout gate failed: requires at least 2 independent real batches/sources. "
+                    f"Found {len(independent_units)}"
+                )
         split_input_df, holdout_path, holdout_source, holdout_rows = holdout_latest_real_source(clean_df, args.out_dir)
         print(f"Held out latest real source: {holdout_source} ({holdout_rows} rows)")
         print(f"Saved fresh real eval set: {holdout_path}")
@@ -359,6 +412,7 @@ def main():
             "source_file": holdout_source,
             "rows": int(holdout_rows),
             "path": holdout_path,
+            "require_two_real_batches_for_holdout": bool(args.require_two_real_batches_for_holdout),
         },
         "feature_columns": feature_cols,
         "rows": {

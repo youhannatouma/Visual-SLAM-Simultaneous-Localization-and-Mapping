@@ -1,0 +1,44 @@
+{
+  "timestamp": 1777827992,
+  "output_csv": "data/raw/media_labeled_batch_A_real_corrected.csv",
+  "review_file": "reports/media_review_batch_A_real_corrected.csv",
+  "corrections_file": "reports/corrections_batch_A_real_v2.csv",
+  "status": "applied",
+  "rows_total": 168,
+  "rows_relabeled": 120,
+  "rows_dropped": 0,
+  "issues": [
+    {
+      "row_id": 160,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 161,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 162,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 163,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 164,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 165,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 166,
+      "issue": "invalid final_label=nan"
+    },
+    {
+      "row_id": 167,
+      "issue": "invalid final_label=nan"
+    }
+  ]
+}
