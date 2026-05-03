@@ -2,6 +2,7 @@ import csv
 import math
 import os
 import time
+from collections import deque, Counter
 
 import torch
 import torch.nn as nn
@@ -12,11 +13,32 @@ MOTION_CLASSES = ["NONE", "LEFT", "RIGHT", "UP", "DOWN"]
 NUM_OBJECT_SLOTS = 3
 
 
+# =============================================================================
+# IMPROVEMENT 1: DEEPER NETWORK WITH DROPOUT
+# =============================================================================
+# Why deepen the network?
+#   A 2-layer network can only learn simple straight-line boundaries.
+#   A 4-layer network can learn complex, curved decision boundaries.
+#   Example: "person close AND chair far AND moving right" = very complex rule.
+#
+# Why Dropout(0.3)?
+#   During training, we randomly DISABLE 30% of neurons each step.
+#   This forces the network to NOT rely on any single neuron,
+#   so it learns more robust, general patterns instead of memorizing data.
+#
+# Why BatchNorm1d?
+#   Normalizes the values between layers. Prevents "exploding" or "vanishing"
+#   gradients that slow down or break training.
+# =============================================================================
 class ReasoningModel(nn.Module):
     def __init__(self, input_size):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(input_size, 64),
+            nn.Linear(input_size, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
@@ -38,6 +60,20 @@ class ReasoningEngine:
         self.tracked_objects = {}
         self.next_id = 0
 
+        # BBox Smoothing
+        self.decision_history = deque(maxlen=10)
+        self.bbox_history = {}  # ID -> deque(maxlen=5)
+
+        # =================================================================
+        # IMPROVEMENT 3: TEMPORAL MEMORY
+        # =================================================================
+        # This stores which object LABELS were seen in the PREVIOUS frame.
+        # Example: If a person was seen last frame but disappeared now,
+        # the model still "knows" about it via this memory.
+        # This makes the model time-aware, not just snapshot-aware.
+        # =================================================================
+        self.prev_labels_seen = set()
+
         self.state = "EXPLORE"
         self.last_decision = "Initializing..."
 
@@ -56,10 +92,18 @@ class ReasoningEngine:
 
     def load_model(self):
         if os.path.exists(self.model_path):
-            input_size = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2
-            self.model = ReasoningModel(input_size).to(self.device)
-            self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
-            self.model.eval()
+            # NOTE: input_size now includes +6 temporal features (one per LABEL_CLASS).
+            # If an OLD model (without temporal features) is loaded, it will fail
+            # silently and fall back to rule-based reasoning. This is intentional.
+            input_size = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2 + len(LABEL_CLASSES)
+            try:
+                self.model = ReasoningModel(input_size).to(self.device)
+                self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+                self.model.eval()
+                print(f"[ReasoningEngine] Loaded model from '{self.model_path}'")
+            except Exception as e:
+                print(f"[ReasoningEngine] WARNING: Model incompatible ({e}). Using rule-based fallback.")
+                self.model = None
         else:
             self.model = None
 
@@ -118,12 +162,33 @@ class ReasoningEngine:
                     matched_id = obj_id
 
             if matched_id is not None:
-                updated[matched_id] = det
-                used_ids.add(matched_id)
+                obj_id = matched_id
             else:
-                updated[self.next_id] = det
-                used_ids.add(self.next_id)
+                obj_id = self.next_id
                 self.next_id += 1
+
+            # BBox Smoothing: Average last 5 positions
+            if obj_id not in self.bbox_history:
+                self.bbox_history[obj_id] = deque(maxlen=5)
+
+            self.bbox_history[obj_id].append(det["bbox"])
+
+            history = self.bbox_history[obj_id]
+            avg_x1 = sum(b[0] for b in history) // len(history)
+            avg_y1 = sum(b[1] for b in history) // len(history)
+            avg_x2 = sum(b[2] for b in history) // len(history)
+            avg_y2 = sum(b[3] for b in history) // len(history)
+
+            det["bbox"] = (avg_x1, avg_y1, avg_x2, avg_y2)
+            det["center"] = ((avg_x1 + avg_x2) // 2, (avg_y1 + avg_y2) // 2)
+            det["area"] = (avg_x2 - avg_x1) * (avg_y2 - avg_y1)
+
+            updated[obj_id] = det
+            used_ids.add(obj_id)
+
+        # Cleanup old bbox histories for objects no longer seen
+        current_ids = set(updated.keys())
+        self.bbox_history = {k: v for k, v in self.bbox_history.items() if k in current_ids}
 
         self.tracked_objects = updated
         return updated
@@ -197,7 +262,11 @@ class ReasoningEngine:
         return score
 
     def extract_features(self, detections, frame_center, frame_area, motion_text):
-        sorted_detections = sorted(detections, key=lambda det: self.object_score(det, frame_center, frame_area), reverse=True)
+        sorted_detections = sorted(
+            detections,
+            key=lambda det: self.object_score(det, frame_center, frame_area),
+            reverse=True
+        )
         slot_features = []
 
         for det in sorted_detections[:NUM_OBJECT_SLOTS]:
@@ -215,11 +284,27 @@ class ReasoningEngine:
         motion_flag = 0.0 if motion_text == "No movement" or motion_text is None else 1.0
         object_count = min(len(detections), NUM_OBJECT_SLOTS) / NUM_OBJECT_SLOTS
 
-        return slot_features + motion_onehot + [motion_flag, object_count]
+        # =====================================================================
+        # IMPROVEMENT 3: TEMPORAL FEATURES
+        # =====================================================================
+        # For each label class, we add 1.0 if that label was seen LAST frame.
+        # This gives the model "short-term memory":
+        #   - "person was there last frame but disappeared" → might be hiding
+        #   - "chair appeared this frame for the first time" → new target
+        # The model can now make decisions based on CHANGE, not just the current snapshot.
+        # =====================================================================
+        temporal_features = [
+            1.0 if label in self.prev_labels_seen else 0.0
+            for label in LABEL_CLASSES
+        ]
+
+        return slot_features + motion_onehot + [motion_flag, object_count] + temporal_features
 
     def predict_action(self, features):
         if self.model is None:
             return None
+        # eval() mode disables Dropout so predictions are deterministic
+        self.model.eval()
         with torch.no_grad():
             tensor = torch.tensor(features, dtype=torch.float32, device=self.device).unsqueeze(0)
             logits = self.model(tensor)
@@ -266,7 +351,26 @@ class ReasoningEngine:
         action_label,
         output_path="data/raw/reasoning_data.csv",
         source_type="manual_live",
+        min_confidence=0.50,
     ):
+        # =====================================================================
+        # IMPROVEMENT 2: QUALITY GATE
+        # =====================================================================
+        # Before saving training data, we check the average detection confidence.
+        # If it's below min_confidence (default 60%), we REJECT the sample.
+        #
+        # Why? Blurry or partially visible objects get low confidence scores.
+        # Training on low-confidence data is like teaching with blurry textbooks -
+        # the model learns wrong patterns and becomes less accurate.
+        #
+        # This ensures ONLY high-quality, clear observations are used for training.
+        # =====================================================================
+        if detections:
+            avg_conf = sum(d["confidence"] for d in detections) / len(detections)
+            if avg_conf < min_confidence:
+                print(f"[QualityGate] REJECTED: avg_conf={avg_conf:.2f} < threshold={min_confidence:.2f}")
+                return False  # Return False to signal the caller the sample was rejected
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         features = self.extract_features(detections, frame_center, frame_area, motion_text)
         row = features + [action_label, source_type]
@@ -278,45 +382,50 @@ class ReasoningEngine:
             if write_header:
                 writer.writerow(header)
             writer.writerow(row)
+        return True  # Return True to signal success
 
     def decide(self, detections, frame_center=(320, 240), frame_area=640 * 480, motion_text=None, use_model=True):
         tracked = self.track_objects(detections)
         self.update_memory(tracked)
 
+        raw_decision = ""
         if use_model and self.model is not None:
             features = self.extract_features(detections, frame_center, frame_area, motion_text)
             action = self.predict_action(features)
             if action is not None:
-                self.last_decision = self.format_action(action, tracked, frame_center, frame_area)
-                return self.last_decision, tracked
+                raw_decision = self.format_action(action, tracked, frame_center, frame_area)
 
-        nearest_person, person_threat, best_target = self.choose_target(tracked, frame_center, frame_area)
+        if not raw_decision:
+            nearest_person, person_threat, best_target = self.choose_target(tracked, frame_center, frame_area)
 
-        if nearest_person and person_threat > 8:
-            self.state = "AVOID"
-            direction = self.frame_direction(nearest_person["center"], frame_center)
-            self.last_decision = f"AVOID PERSON ({direction})"
-            return self.last_decision, tracked
-
-        if best_target and best_target["label"] == "chair":
-            self.state = "TARGET"
-            direction = self.frame_direction(best_target["center"], frame_center)
-            if best_target["area"] / frame_area > 0.08:
-                self.last_decision = f"MOVE TO CHAIR ({direction})"
+            if nearest_person and person_threat > 8:
+                self.state = "AVOID"
+                direction = self.frame_direction(nearest_person["center"], frame_center)
+                raw_decision = f"AVOID PERSON ({direction})"
+            elif best_target and best_target["label"] == "chair":
+                self.state = "TARGET"
+                direction = self.frame_direction(best_target["center"], frame_center)
+                if best_target["area"] / frame_area > 0.08:
+                    raw_decision = f"MOVE TO CHAIR ({direction})"
+                else:
+                    raw_decision = f"TURN TOWARD CHAIR ({direction})"
+            elif best_target and best_target["label"] == "table":
+                self.state = "INVESTIGATE"
+                direction = self.frame_direction(best_target["center"], frame_center)
+                raw_decision = f"CHECK TABLE ({direction})"
             else:
-                self.last_decision = f"TURN TOWARD CHAIR ({direction})"
-            return self.last_decision, tracked
+                self.state = "EXPLORE"
+                if motion_text and motion_text != "No movement":
+                    raw_decision = f"EXPLORE / {motion_text}"
+                else:
+                    raw_decision = "EXPLORE AND SEARCH"
 
-        if best_target and best_target["label"] == "table":
-            self.state = "INVESTIGATE"
-            direction = self.frame_direction(best_target["center"], frame_center)
-            self.last_decision = f"CHECK TABLE ({direction})"
-            return self.last_decision, tracked
+        # Hysteresis: Return the most common decision in recent history
+        self.decision_history.append(raw_decision)
+        counts = Counter(self.decision_history)
+        self.last_decision = counts.most_common(1)[0][0]
 
-        self.state = "EXPLORE"
-        if motion_text and motion_text != "No movement":
-            self.last_decision = f"EXPLORE / {motion_text}"
-        else:
-            self.last_decision = "EXPLORE AND SEARCH"
+        # Update temporal memory for the NEXT frame's feature extraction
+        self.prev_labels_seen = {obj["label"] for obj in tracked.values()}
 
         return self.last_decision, tracked
