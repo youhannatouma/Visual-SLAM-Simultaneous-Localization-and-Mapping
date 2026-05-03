@@ -2,39 +2,33 @@
 
 ## Sprint Outcome (As of 2026-05-03)
 
-The branch is now policy-compliant and operational with strict training gates enabled end-to-end.
+The branch is operational with strict gates and repeatable training cycles, but the latest model is still not promotable.
 
-What is now true:
-- Strict audit gates pass reliably on current raw inputs.
-- Two+ independent real batches are present and enforced.
-- Review/correction status and correction-audit artifacts are integrated.
-- Promotion framework with baseline + hard fresh-real improvement gate is active.
+What is currently true:
+- Strict audit, preprocessing, review, and training gates are active end-to-end.
+- Promotion baseline is initialized at `reports/metrics_promoted_baseline.json`.
 - MLP-only training remains enforced.
+- Latest normal cycle is **not promoted**.
 
 ---
 
 ## What Was Implemented
 
-### 1. Pipeline governance + reliability
-- Disk preflight and retention integrated in training pipeline.
+### 1. Pipeline governance
+- Disk preflight + retention integrated in the guarded pipeline.
 - Dataset manifest/changelog snapshots written each run.
-- Archive usage remains opt-in experiment mode only.
-
-### 2. Data quality and review hardening
-- Strict audit gates: min-per-class, imbalance, real/synthetic shares, two-real-batches.
 - Review status gate (`pending` vs `applied`) enforced before preprocessing.
-- Correction audit JSON now produced for media ingestion with machine-checkable gate fields.
 
-### 3. Promotion policy upgrade
-- Promotion now compares against promoted baseline metrics artifact.
-- Fresh-real improvement is now a hard gate:
-  - accuracy delta >= `+0.10`
-  - macro F1 delta >= `+0.10`
-- Promotion summary is emitted as `reports/promotion_summary.json`.
+### 2. Data-cycle and correction workflow
+- Targeted capture checklist created for table/chair edge cases.
+- New real batches ingested (`batch_E`, `batch_F`, `batch_G`, `batch_H`) with correction files and audits.
+- Targeted correction pass for `MOVE_TO_CHAIR` executed and retrained.
 
-### 4. Data-cycle automation
-- Added cycle runner script for batch ingest/correction/pipeline execution.
-- Batch/scenario coverage and correction audit artifacts are emitted per cycle.
+### 3. Promotion policy enforcement
+- Promotion compares against promoted baseline artifact.
+- Fresh-real hard improvement gate enforced:
+  - `delta accuracy >= +0.10`
+  - `delta macro_f1 >= +0.10`
 
 ---
 
@@ -44,79 +38,73 @@ What is now true:
 - `data/raw/curated_real_balanced.csv`
 - `data/raw/media_labeled_batch_A_real_corrected.csv`
 - `data/raw/media_labeled_batch_B_real_corrected.csv`
-- `data/raw/media_labeled_batch_C_real.csv`
 - `data/raw/media_labeled_batch_D_real.csv`
+- `data/raw/media_labeled_batch_E_real.csv`
+- `data/raw/media_labeled_batch_F_real.csv`
+- `data/raw/media_labeled_batch_G_real.csv`
+- `data/raw/media_labeled_batch_H_real.csv`
 
-### Latest strict audit snapshot
-- files: `5`
-- raw rows: `1296`
-- clean rows: `723`
+### Latest strict audit snapshot (`reports/dataset_audit.json`)
+- files: `8`
+- raw rows: `994`
+- clean rows: `781`
 - class counts:
-  - `AVOID_PERSON`: `180`
-  - `MOVE_TO_CHAIR`: `185`
-  - `CHECK_TABLE`: `179`
-  - `EXPLORE`: `179`
-- imbalance ratio: `1.03` (passes `<=1.3`)
+  - `AVOID_PERSON`: `208`
+  - `MOVE_TO_CHAIR`: `202`
+  - `CHECK_TABLE`: `170`
+  - `EXPLORE`: `201`
+- imbalance ratio: `1.2235` (passes `<=1.3`)
 - real share: `1.000` (passes `>=0.6`)
 - synthetic share: `0.000` (passes `<=0.4`)
-- independent real batches/sources: `3` (passes)
+- independent real batches/sources: `6` (passes)
 - `ready_for_training=true`
 
 ---
 
 ## Promotion Readiness (Latest)
 
-Latest run is still **not promoted**.
+Latest normal cycle is **not promoted** (`reports/promotion_summary.json`).
 
-From `reports/promotion_summary.json`:
-- fresh-real hard gate: **PASS**
-  - fresh-real accuracy delta: `+0.5709`
-  - fresh-real macro F1 delta: `+0.6409`
-- test/key-class non-regression gates: **FAIL**
-  - test accuracy: `0.8889 -> 0.8113` (regression)
-  - `CHECK_TABLE` F1: `0.8485 -> 0.7500` (regression)
-  - `MOVE_TO_CHAIR` F1: `0.9189 -> 0.7143` (regression)
+Gate summary vs promoted baseline:
+- test non-regression: **PASS**
+  - test accuracy: `0.7414 -> 0.7647`
+- key-class non-regression: **FAIL**
+  - `CHECK_TABLE` F1: `0.7368 -> 0.7018` (regression)
+  - `MOVE_TO_CHAIR` F1: `0.7333 -> 0.7458` (pass)
+- fresh-real hard improvement: **FAIL**
+  - accuracy delta: `0.0` (required `+0.10`)
+  - macro F1 delta: `0.0` (required `+0.10`)
 
-Interpretation:
-- Out-of-source robustness improved strongly.
-- In-split and key-class retention against promoted baseline regressed.
-- Promotion is blocked by non-regression policy, not by fresh-real gate anymore.
+Latest training metrics (`reports/metrics.json`):
+- test accuracy: `0.7647`
+- macro F1: `0.7626`
+- fresh-real eval: accuracy `1.000`, macro F1 `0.250` on `12` rows
 
 ---
 
 ## Main Risk Right Now
 
-Primary risk has shifted from “fresh-real weakness” to a **tradeoff instability**:
-- Improving fresh-real robustness is currently reducing test/key-class baseline retention.
-
-This is now the blocker for production promotion.
+Primary blocker is now concentrated in two areas:
+- `CHECK_TABLE` retention is below promoted-baseline F1.
+- Fresh-real holdout is saturated and too narrow (all-positive behavior), so improvement delta remains zero and fails policy.
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. Recover key-class retention without losing fresh-real gains.
-- Focus data expansion on high-quality `MOVE_TO_CHAIR` and `CHECK_TABLE` hard cases.
-- Prioritize true positive table/chair contexts with reduced label ambiguity.
+1. Run targeted `CHECK_TABLE` correction pass.
+- Relabel/drop ambiguous table-vs-chair rows from latest review artifacts.
+- Prioritize true table-interaction contexts; drop ambiguous intent frames.
 
-2. Keep strict gates unchanged.
-- Continue enforcing:
-  - imbalance <= `1.3`
-  - real share >= `0.6`
-  - synthetic share <= `0.4`
-  - min-per-class gate
-  - two-independent-real-batches gate for holdout
-  - fresh-real hard improvement gate
+2. Improve fresh-real holdout diversity.
+- Add at least two new independent real batches with mixed/occlusion/table-chair transition coverage.
+- Ensure fresh holdout includes meaningful class variety, not single-class dominance.
 
-3. Improve review/correction quality on targeted classes.
-- Use correction audits to track relabel/drop patterns per class.
-- Increase sampled QA scrutiny for `CHECK_TABLE` and `MOVE_TO_CHAIR` rows.
-
-4. Re-run guarded pipeline and compare to promoted baseline.
-- Preserve MLP-only constraint.
-- Promote only when all gates pass together:
+3. Re-run guarded cycle and compare to promoted baseline.
+- Keep strict gates unchanged.
+- Promote only if all three pass together:
   - test non-regression
-  - key-class F1 non-regression
+  - key-class non-regression
   - fresh-real hard improvement thresholds
 
 ---
