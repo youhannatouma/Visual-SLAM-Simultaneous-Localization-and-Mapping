@@ -4,6 +4,35 @@
 
 The branch is operational with strict gates and repeatable training cycles, but the latest model is still not promotable.
 
+---
+
+## Update (2026-05-05) - Balanced Run (Promotion Ignored)
+
+Summary of what happened:
+- Ran a balanced training cycle using `data/raw_balanced/*.csv` (200 rows, 50 per class; 19% rebalance rows).
+- Generated a new model and metrics, and refreshed the confusion matrix.
+- Promotion gate was intentionally ignored for this cycle.
+
+Latest balanced-run metrics (`reports/metrics.json`):
+- test accuracy: `0.750`
+- macro F1: `0.711`
+- fresh-real accuracy: `0.762`
+- fresh-real macro F1: `0.658`
+
+Confusion matrix highlights (test set):
+- `CHECK_TABLE` -> `EXPLORE` is the dominant error (4/5).
+- `AVOID_PERSON` -> `MOVE_TO_CHAIR` appears occasionally (1/5).
+- `MOVE_TO_CHAIR` and `EXPLORE` are otherwise stable in test.
+
+Fresh-real error pattern:
+- `CHECK_TABLE` collapses to `EXPLORE` (16/17).
+- `AVOID_PERSON` sometimes flips to `MOVE_TO_CHAIR` (4/25).
+
+What is missing / still needed:
+- More real `CHECK_TABLE` examples to break the table-vs-explore collapse.
+- Better real `EXPLORE` diversity (not just table-focus scenes).
+- Reduce reliance on rebalance rows by collecting additional real batches.
+
 What is currently true:
 - Strict audit, preprocessing, review, and training gates are active end-to-end.
 - Promotion baseline is initialized at `reports/metrics_promoted_baseline.json`.

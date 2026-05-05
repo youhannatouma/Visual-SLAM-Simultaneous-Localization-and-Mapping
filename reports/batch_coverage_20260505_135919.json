@@ -1,26 +1,20 @@
 {
-  "timestamp": 1777839679,
+  "timestamp": 1777978886,
   "batch_id": "batch_F_real",
   "scenario": "occlusion",
-  "rows_total": 70,
+  "rows_total": 293,
   "scenario_class_counts": [
     {
       "batch_id": "batch_F_real",
       "scenario": "occlusion",
       "label": "AVOID_PERSON",
-      "count": 37
-    },
-    {
-      "batch_id": "batch_F_real",
-      "scenario": "occlusion",
-      "label": "CHECK_TABLE",
-      "count": 10
+      "count": 240
     },
     {
       "batch_id": "batch_F_real",
       "scenario": "occlusion",
       "label": "MOVE_TO_CHAIR",
-      "count": 23
+      "count": 53
     }
   ]
 }

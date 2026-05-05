@@ -1,0 +1,14 @@
+{
+  "timestamp": 1777979011,
+  "batch_id": "batch_E_real",
+  "scenario": "mixed",
+  "rows_total": 44,
+  "scenario_class_counts": [
+    {
+      "batch_id": "batch_E_real",
+      "scenario": "mixed",
+      "label": "AVOID_PERSON",
+      "count": 44
+    }
+  ]
+}

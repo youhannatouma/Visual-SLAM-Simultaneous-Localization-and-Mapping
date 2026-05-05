@@ -1,2 +1,0 @@
-row_id,source_file,frame_index,auto_label,final_label,drop_row,needs_review,detections_json
-16,h_batchH_desk_phone_1019_360p.mp4,136,AVOID_PERSON,,0,0,"{""person"": 1, ""mouse"": 1, ""keyboard"": 1}"

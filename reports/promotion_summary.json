@@ -6,51 +6,49 @@
   "gate_results": {
     "test_accuracy_non_regression": {
       "passed": true,
-      "old": 0.7413793103448276,
-      "new": 0.7647058823529411,
+      "old": 0.65,
+      "new": 0.75,
       "tolerance": 0.005
     },
     "key_class_f1_non_regression": {
-      "passed": false,
+      "passed": true,
       "classes": {
         "CHECK_TABLE": {
-          "passed": false,
-          "old_f1": 0.7368421052631577,
-          "new_f1": 0.7017543859649122
+          "passed": true,
+          "old_f1": 0.25,
+          "new_f1": 0.33333333333333337
         },
         "MOVE_TO_CHAIR": {
           "passed": true,
-          "old_f1": 0.7333333333333333,
-          "new_f1": 0.7457627118644068
+          "old_f1": 0.9090909090909091,
+          "new_f1": 0.9090909090909091
         }
       }
     },
     "fresh_real_improvement": {
       "passed": false,
       "old": {
-        "accuracy": 1.0,
-        "macro_f1": 0.25
+        "accuracy": 0.7738095238095238,
+        "macro_f1": 0.7378790263387703
       },
       "new": {
-        "accuracy": 1.0,
-        "macro_f1": 0.25
+        "accuracy": 0.7619047619047619,
+        "macro_f1": 0.6575201288244767
       },
       "delta": {
-        "accuracy": 0.0,
-        "macro_f1": 0.0
+        "accuracy": -0.011904761904761973,
+        "macro_f1": -0.08035889751429359
       },
       "required_delta": {
-        "accuracy": 0.1,
-        "macro_f1": 0.1
+        "accuracy": 0.0,
+        "macro_f1": 0.0
       }
     }
   },
   "failure_reasons": [
-    "Key class F1 regression detected.",
-    "Fresh-real improvement gate not met (delta accuracy=0.0, delta macro_f1=0.0)."
+    "Fresh-real improvement gate not met (delta accuracy=-0.011904761904761973, delta macro_f1=-0.08035889751429359)."
   ],
   "recommended_actions": [
-    "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
     "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
   ]
 }

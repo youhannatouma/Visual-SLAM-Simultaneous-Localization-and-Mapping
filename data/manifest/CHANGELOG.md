@@ -376,3 +376,35 @@
 - class distribution: {'AVOID_PERSON': 254, 'MOVE_TO_CHAIR': 258, 'CHECK_TABLE': 216, 'EXPLORE': 266}
 - source distribution: {'real_media': 994}
 
+## v20260505_142457
+- timestamp: 1777980297
+- raw files: 2
+- raw rows: 200
+- fingerprint: bcd16feaf780e9f6a62cbc89f815ab55ac97dbb1e8fc987fab9734744c6df7fc
+- class distribution: {'AVOID_PERSON': 50, 'MOVE_TO_CHAIR': 50, 'CHECK_TABLE': 50, 'EXPLORE': 50}
+- source distribution: {'real_media': 162, 'rebalance': 38}
+
+## v20260505_143614
+- timestamp: 1777980974
+- raw files: 2
+- raw rows: 200
+- fingerprint: bcd16feaf780e9f6a62cbc89f815ab55ac97dbb1e8fc987fab9734744c6df7fc
+- class distribution: {'AVOID_PERSON': 50, 'MOVE_TO_CHAIR': 50, 'CHECK_TABLE': 50, 'EXPLORE': 50}
+- source distribution: {'real_media': 162, 'rebalance': 38}
+
+## v20260505_143953
+- timestamp: 1777981193
+- raw files: 2
+- raw rows: 200
+- fingerprint: bcd16feaf780e9f6a62cbc89f815ab55ac97dbb1e8fc987fab9734744c6df7fc
+- class distribution: {'AVOID_PERSON': 50, 'MOVE_TO_CHAIR': 50, 'CHECK_TABLE': 50, 'EXPLORE': 50}
+- source distribution: {'real_media': 162, 'rebalance': 38}
+
+## v20260505_144757
+- timestamp: 1777981677
+- raw files: 2
+- raw rows: 200
+- fingerprint: bcd16feaf780e9f6a62cbc89f815ab55ac97dbb1e8fc987fab9734744c6df7fc
+- class distribution: {'AVOID_PERSON': 50, 'MOVE_TO_CHAIR': 50, 'CHECK_TABLE': 50, 'EXPLORE': 50}
+- source distribution: {'real_media': 162, 'rebalance': 38}
+
