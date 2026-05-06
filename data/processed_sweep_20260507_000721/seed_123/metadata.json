@@ -1,0 +1,109 @@
+{
+  "input_glob": "data/raw/*.csv",
+  "input_files": [
+    "data/raw/curated_real_balanced.csv",
+    "data/raw/media_labeled_batch_A_real_corrected.csv",
+    "data/raw/media_labeled_batch_B_real_corrected.csv",
+    "data/raw/media_labeled_batch_D_real.csv",
+    "data/raw/media_labeled_stage2_check_table_train_20260506.csv",
+    "data/raw/media_labeled_stage2_curated_train_20260506.csv",
+    "data/raw/media_labeled_stage2_train_refix_20260506.csv",
+    "data/raw/move_recovery_pool_20260507.csv",
+    "data/raw/zz_fresh_real_holdout_20260506.csv"
+  ],
+  "balance": "oversample",
+  "seed": 123,
+  "ratios": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "cleaning": {
+    "rows_initial": 1186,
+    "rows_after_dropna": 1186,
+    "rows_after_finite_check": 1186,
+    "rows_after_label_filter": 1186,
+    "rows_after_dedup": 913,
+    "dropped_missing_required": 0,
+    "dropped_non_finite": 0,
+    "dropped_unknown_label": 0,
+    "dropped_duplicates": 273,
+    "feature_count": 43
+  },
+  "minimum_per_class": {
+    "required": 50,
+    "counts_after_clean": {
+      "AVOID_PERSON": 208,
+      "MOVE_TO_CHAIR": 242,
+      "CHECK_TABLE": 256,
+      "EXPLORE": 207
+    }
+  },
+  "source_quality": {
+    "real_rows": 913,
+    "synthetic_rows": 0,
+    "total_clean": 913,
+    "real_share": 1.0,
+    "synthetic_share": 0.0,
+    "min_real_share": 0.6,
+    "max_synthetic_share": 0.4
+  },
+  "holdout_latest_real_source": {
+    "enabled": true,
+    "source_file": "zz_fresh_real_holdout_20260506.csv",
+    "rows": 48,
+    "path": "data/processed_sweep_20260507_000721/seed_123/fresh_real_eval.csv",
+    "require_two_real_batches_for_holdout": true
+  },
+  "feature_columns": [
+    "f0",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+    "f13",
+    "f14",
+    "f15",
+    "f16",
+    "f17",
+    "f18",
+    "f19",
+    "f20",
+    "f21",
+    "f22",
+    "f23",
+    "f24",
+    "f25",
+    "f26",
+    "f27",
+    "f28",
+    "f29",
+    "f30",
+    "f31",
+    "f32",
+    "f33",
+    "f34",
+    "f35",
+    "f36",
+    "f37",
+    "f38",
+    "f39",
+    "f40",
+    "f41",
+    "f42"
+  ],
+  "rows": {
+    "train": 680,
+    "val": 144,
+    "test": 152,
+    "total": 976
+  }
+}

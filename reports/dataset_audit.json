@@ -1,16 +1,22 @@
 {
-  "input_glob": "data/raw_balanced/*.csv",
+  "input_glob": "data/raw/*.csv",
   "files": [
-    "data/raw_balanced/balanced_batch_A.csv",
-    "data/raw_balanced/balanced_batch_B.csv"
+    "data/raw/curated_real_balanced.csv",
+    "data/raw/media_labeled_batch_A_real_corrected.csv",
+    "data/raw/media_labeled_batch_B_real_corrected.csv",
+    "data/raw/media_labeled_batch_D_real.csv",
+    "data/raw/media_labeled_stage2_check_table_train_20260506.csv",
+    "data/raw/media_labeled_stage2_curated_train_20260506.csv",
+    "data/raw/media_labeled_stage2_train_refix_20260506.csv",
+    "data/raw/zz_fresh_real_holdout_20260506.csv"
   ],
   "rows": {
-    "raw": 200,
-    "clean": 200,
+    "raw": 1105,
+    "clean": 885,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_invalid_label": 0,
-    "dropped_duplicates": 0
+    "dropped_duplicates": 220
   },
   "features": {
     "count": 43,
@@ -61,50 +67,37 @@
     ]
   },
   "class_distribution": {
-    "AVOID_PERSON": 50,
-    "MOVE_TO_CHAIR": 50,
-    "CHECK_TABLE": 50,
-    "EXPLORE": 50
+    "AVOID_PERSON": 208,
+    "MOVE_TO_CHAIR": 214,
+    "CHECK_TABLE": 256,
+    "EXPLORE": 207
   },
   "source_type_distribution": {
-    "real_media": 162,
-    "rebalance": 38
+    "real_media": 885
   },
   "source_class_distribution": {
     "real_media": {
-      "AVOID_PERSON": 50,
-      "MOVE_TO_CHAIR": 50,
-      "CHECK_TABLE": 31,
-      "EXPLORE": 31
-    },
-    "rebalance": {
-      "AVOID_PERSON": 0,
-      "MOVE_TO_CHAIR": 0,
-      "CHECK_TABLE": 19,
-      "EXPLORE": 19
+      "AVOID_PERSON": 208,
+      "MOVE_TO_CHAIR": 214,
+      "CHECK_TABLE": 256,
+      "EXPLORE": 207
     }
   },
   "scenario_class_distribution": {
-    "balanced_auto": {
-      "AVOID_PERSON": 0,
-      "MOVE_TO_CHAIR": 0,
-      "CHECK_TABLE": 19,
-      "EXPLORE": 19
-    },
     "mixed": {
-      "AVOID_PERSON": 11,
-      "MOVE_TO_CHAIR": 0,
-      "CHECK_TABLE": 0,
-      "EXPLORE": 0
+      "AVOID_PERSON": 63,
+      "MOVE_TO_CHAIR": 48,
+      "CHECK_TABLE": 40,
+      "EXPLORE": 40
     },
     "occlusion": {
-      "AVOID_PERSON": 38,
-      "MOVE_TO_CHAIR": 50,
+      "AVOID_PERSON": 22,
+      "MOVE_TO_CHAIR": 46,
       "CHECK_TABLE": 0,
       "EXPLORE": 0
     },
     "table_chair_transition": {
-      "AVOID_PERSON": 1,
+      "AVOID_PERSON": 3,
       "MOVE_TO_CHAIR": 0,
       "CHECK_TABLE": 0,
       "EXPLORE": 0
@@ -112,26 +105,35 @@
     "table_focus_clutter": {
       "AVOID_PERSON": 0,
       "MOVE_TO_CHAIR": 0,
-      "CHECK_TABLE": 31,
-      "EXPLORE": 29
+      "CHECK_TABLE": 0,
+      "EXPLORE": 47
+    },
+    "table_focus_override": {
+      "AVOID_PERSON": 0,
+      "MOVE_TO_CHAIR": 0,
+      "CHECK_TABLE": 44,
+      "EXPLORE": 0
     }
   },
   "imbalance": {
-    "max_over_min_nonzero": 1.0,
+    "max_over_min_nonzero": 1.2367149758454106,
     "threshold": 1.3
   },
   "source_quality": {
-    "real_rows": 162,
-    "synthetic_rows": 38,
-    "total_clean": 200,
-    "real_share": 0.81,
-    "synthetic_share": 0.19,
+    "real_rows": 885,
+    "synthetic_rows": 0,
+    "total_clean": 885,
+    "real_share": 1.0,
+    "synthetic_share": 0.0,
     "min_real_share": 0.6,
     "max_synthetic_share": 0.4,
-    "independent_real_batches_count": 2,
+    "independent_real_batches_count": 5,
     "independent_real_batches": [
-      "balanced_A",
-      "balanced_B"
+      "batch_A_real",
+      "batch_stage2_check_table_train_20260506",
+      "batch_stage2_holdout_refix_20260506",
+      "batch_stage2_train_20260506",
+      "batch_stage2_train_refix_20260506"
     ]
   },
   "scenario_quota": {

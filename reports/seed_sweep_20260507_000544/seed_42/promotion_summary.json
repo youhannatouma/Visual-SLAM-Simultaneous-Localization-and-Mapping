@@ -1,0 +1,56 @@
+{
+  "status": "not_promoted",
+  "promotable": false,
+  "baseline_path": "reports/metrics_promoted_baseline.json",
+  "current_metrics_path": "reports/seed_sweep_20260507_000544/seed_42/metrics.json",
+  "gate_results": {
+    "test_accuracy_non_regression": {
+      "passed": true,
+      "old": 0.65,
+      "new": 0.7972027972027972,
+      "tolerance": 0.005
+    },
+    "key_class_f1_non_regression": {
+      "passed": false,
+      "classes": {
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.25,
+          "new_f1": 0.7901234567901235
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": false,
+          "old_f1": 0.9090909090909091,
+          "new_f1": 0.6875
+        }
+      }
+    },
+    "fresh_real_improvement": {
+      "passed": false,
+      "old": {
+        "accuracy": 0.7738095238095238,
+        "macro_f1": 0.7378790263387703
+      },
+      "new": {
+        "accuracy": 0.7692307692307693,
+        "macro_f1": 0.7337995337995337
+      },
+      "delta": {
+        "accuracy": -0.0045787545787545625,
+        "macro_f1": -0.004079492539236673
+      },
+      "required_delta": {
+        "accuracy": 0.1,
+        "macro_f1": 0.1
+      }
+    }
+  },
+  "failure_reasons": [
+    "Key class F1 regression detected.",
+    "Fresh-real improvement gate not met (delta accuracy=-0.0045787545787545625, delta macro_f1=-0.004079492539236673)."
+  ],
+  "recommended_actions": [
+    "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+  ]
+}

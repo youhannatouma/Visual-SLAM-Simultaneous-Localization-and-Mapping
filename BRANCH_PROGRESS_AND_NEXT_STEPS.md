@@ -41,6 +41,24 @@ What is currently true:
 
 ---
 
+## Update (2026-05-07) - MOVE_TO_CHAIR Recovery Pool + Seed Sweep
+
+Summary of what happened:
+- Built a reviewed-only `MOVE_TO_CHAIR` recovery pool from reviewed archive + staging + raw sources.
+- Expanded candidates and curated to hard/ambiguous rows (needs_review=1 or auto_label != label).
+- Ran 3-seed sweep (17/42/123) using oversample; no non-regressing run vs promoted baseline.
+
+Seed sweep highlights (best-of, not promotable):
+- Best `MOVE_TO_CHAIR` F1: `0.716` (seed `42`)
+- Test accuracy: `0.776`
+- Fresh-real macro F1: `0.622`
+
+Notes:
+- Clean rows stayed at `913` despite added recovery pool rows (dedup is filtering out duplicates).
+- Fresh-real holdout size dropped to `36` rows (eval rows `27`), making deltas noisy.
+
+---
+
 ## What Was Implemented
 
 ### 1. Pipeline governance
@@ -68,21 +86,23 @@ What is currently true:
 - `data/raw/media_labeled_batch_A_real_corrected.csv`
 - `data/raw/media_labeled_batch_B_real_corrected.csv`
 - `data/raw/media_labeled_batch_D_real.csv`
-- `data/raw/media_labeled_batch_E_real.csv`
-- `data/raw/media_labeled_batch_F_real.csv`
-- `data/raw/media_labeled_batch_G_real.csv`
-- `data/raw/media_labeled_batch_H_real.csv`
+- `data/raw/media_labeled_stage2_check_table_train_20260506.csv`
+- `data/raw/media_labeled_stage2_curated_train_20260506.csv`
+- `data/raw/media_labeled_stage2_train_refix_20260506.csv`
+- `data/raw/move_recovery_pool_20260507.csv`
+- `data/raw/session_20260507_002204.csv` (live labeling, in progress)
+- `data/raw/zz_fresh_real_holdout_20260506.csv`
 
-### Latest strict audit snapshot (`reports/dataset_audit.json`)
-- files: `8`
-- raw rows: `994`
-- clean rows: `781`
+### Latest strict audit snapshot (seed sweep 2026-05-07)
+- files: `9` (seed sweep 2026-05-07, pre live session)
+- raw rows: `1646`
+- clean rows: `913`
 - class counts:
   - `AVOID_PERSON`: `208`
-  - `MOVE_TO_CHAIR`: `202`
-  - `CHECK_TABLE`: `170`
-  - `EXPLORE`: `201`
-- imbalance ratio: `1.2235` (passes `<=1.3`)
+  - `MOVE_TO_CHAIR`: `242`
+  - `CHECK_TABLE`: `256`
+  - `EXPLORE`: `207`
+- imbalance ratio: `1.24` (passes `<=1.3`)
 - real share: `1.000` (passes `>=0.6`)
 - synthetic share: `0.000` (passes `<=0.4`)
 - independent real batches/sources: `6` (passes)

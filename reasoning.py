@@ -9,18 +9,11 @@ import torch
 import torch.nn as nn
 
 LABEL_CLASSES = ["person", "chair", "table", "sofa", "tv", "other"]
-ACTION_CLASSES = [
-    "MOVE_FORWARD",
-    "TURN_LEFT",
-    "TURN_RIGHT",
-    "STOP",
-    "AVOID_PERSON",
-    "MOVE_TO_CHAIR",
-    "CHECK_TABLE",
-    "EXPLORE"
-]
+ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
 MOTION_CLASSES = ["NONE", "LEFT", "RIGHT", "UP", "DOWN"]
 NUM_OBJECT_SLOTS = 3
+SEQUENCE_LENGTH = 10
+FEATURE_SIZE = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2 + len(LABEL_CLASSES)
 
 
 # =============================================================================
@@ -68,7 +61,7 @@ class ReasoningGRU(nn.Module):
 
 
 class ReasoningEngine:
-    def __init__(self, model_path="models/reasoning_model.pt"):
+    def __init__(self, model_path="models/reasoning_model.pt", sequence_length=SEQUENCE_LENGTH):
         self.goal = "find_chair"
 
         self.memory = []
@@ -79,6 +72,8 @@ class ReasoningEngine:
         self.next_id = 0
 
         self.trajectory_history = {}
+        self.sequence_length = sequence_length
+        self.feature_history = deque(maxlen=self.sequence_length)
         
         # BBox Smoothing
         self.decision_history = deque(maxlen=10)
@@ -113,12 +108,8 @@ class ReasoningEngine:
 
     def load_model(self):
         if os.path.exists(self.model_path):
-            # NOTE: input_size now includes +6 temporal features (one per LABEL_CLASS).
-            # If an OLD model (without temporal features) is loaded, it will fail
-            # silently and fall back to rule-based reasoning. This is intentional.
-            input_size = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2 + len(LABEL_CLASSES)
             try:
-                self.model = ReasoningGRU(input_size).to(self.device)
+                self.model = ReasoningGRU(FEATURE_SIZE).to(self.device)
                 self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
                 self.model.eval()
                 print(f"[ReasoningEngine] Loaded model from '{self.model_path}'")
@@ -170,6 +161,10 @@ class ReasoningEngine:
         x2, y2 = points[-1]
 
         return x2 - x1, y2 - y1
+
+    def reset_temporal_state(self):
+        self.feature_history.clear()
+        self.action_history.clear()
 
     def track_objects(self, detections):
         updated = {}
@@ -343,13 +338,17 @@ class ReasoningEngine:
         return features.tolist()
 
 
-    def predict_action(self, features):
-        if self.model is None:
+    def predict_action(self):
+        if self.model is None or len(self.feature_history) < self.sequence_length:
             return None
-        # eval() mode disables Dropout so predictions are deterministic
+
         self.model.eval()
         with torch.no_grad():
-            tensor = torch.tensor(features, dtype=torch.float32, device=self.device).unsqueeze(0)
+            tensor = torch.tensor(
+                list(self.feature_history),
+                dtype=torch.float32,
+                device=self.device,
+            ).unsqueeze(0)
             logits = self.model(tensor)
             action_index = int(logits.argmax(dim=-1).item())
             return self.index_to_action(action_index)
@@ -358,22 +357,7 @@ class ReasoningEngine:
         person = next((obj for obj in tracked.values() if obj["label"] == "person"), None)
         chair = next((obj for obj in tracked.values() if obj["label"] == "chair"), None)
         table = next((obj for obj in tracked.values() if obj["label"] == "table"), None)
-        if action == "MOVE_FORWARD":
-            self.state = "NAVIGATE"
-            return "MOVE FORWARD"
 
-        if action == "TURN_LEFT":
-            self.state = "NAVIGATE"
-            return "TURN LEFT"
-
-        if action == "TURN_RIGHT":
-            self.state = "NAVIGATE"
-            return "TURN RIGHT"
-
-        if action == "STOP":
-            self.state = "STOP"
-            return "STOP"
-        
         if action == "AVOID_PERSON":
             self.state = "AVOID"
             if person:
@@ -458,27 +442,20 @@ class ReasoningEngine:
         self.update_memory(tracked)
 
         raw_decision = ""
+        features = self.extract_features(
+            detections,
+            frame_center,
+            frame_area,
+            motion_text
+        )
+        self.feature_history.append(features)
         
         if use_model and self.model is not None:
-            features = self.extract_features(
-                detections,
-                frame_center,
-                frame_area,
-                motion_text
-            )
-
-            action = self.predict_action(features)
+            action = self.predict_action()
 
             if action is not None:
-
-                # ---------------------------------------------------
-                # TEMPORAL ACTION SMOOTHING
-                # ---------------------------------------------------
                 self.action_history.append(action)
-
-                final_action = Counter(
-                    self.action_history
-                ).most_common(1)[0][0]
+                final_action = Counter(self.action_history).most_common(1)[0][0]
 
                 raw_decision = self.format_action(
                     final_action,
@@ -506,14 +483,8 @@ class ReasoningEngine:
                 direction = self.frame_direction(best_target["center"], frame_center)
                 raw_decision = f"CHECK TABLE ({direction})"
             else:
-
-                if motion_text == "No movement":
-                    self.state = "NAVIGATE"
-                    raw_decision = "MOVE FORWARD"
-
-                else:
-                    self.state = "EXPLORE"
-                    raw_decision = "EXPLORE AND SEARCH"
+                self.state = "EXPLORE"
+                raw_decision = "EXPLORE AND SEARCH"
 
         # Hysteresis: Return the most common decision in recent history
         self.decision_history.append(raw_decision)

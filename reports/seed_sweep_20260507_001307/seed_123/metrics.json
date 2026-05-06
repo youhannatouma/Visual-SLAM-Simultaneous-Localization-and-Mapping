@@ -1,0 +1,165 @@
+{
+  "model_algorithm": "gru",
+  "sequence_length": 10,
+  "feature_size": 43,
+  "feature_columns": [
+    "f0",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+    "f13",
+    "f14",
+    "f15",
+    "f16",
+    "f17",
+    "f18",
+    "f19",
+    "f20",
+    "f21",
+    "f22",
+    "f23",
+    "f24",
+    "f25",
+    "f26",
+    "f27",
+    "f28",
+    "f29",
+    "f30",
+    "f31",
+    "f32",
+    "f33",
+    "f34",
+    "f35",
+    "f36",
+    "f37",
+    "f38",
+    "f39",
+    "f40",
+    "f41",
+    "f42"
+  ],
+  "seed": 123,
+  "threshold_local_rows": 50000,
+  "dataset_rows": {
+    "train": 671,
+    "val": 135,
+    "test": 143,
+    "total": 949
+  },
+  "accuracy": {
+    "best_val": 0.8222222222222222,
+    "test": 0.7342657342657343
+  },
+  "macro_f1": 0.7283987489753335,
+  "per_class": {
+    "AVOID_PERSON": {
+      "precision": 0.75,
+      "recall": 0.8918918918918919,
+      "f1": 0.8148148148148148
+    },
+    "MOVE_TO_CHAIR": {
+      "precision": 0.6052631578947368,
+      "recall": 0.696969696969697,
+      "f1": 0.6478873239436619
+    },
+    "CHECK_TABLE": {
+      "precision": 0.7037037037037037,
+      "recall": 0.5135135135135135,
+      "f1": 0.59375
+    },
+    "EXPLORE": {
+      "precision": 0.8823529411764706,
+      "recall": 0.8333333333333334,
+      "f1": 0.8571428571428571
+    }
+  },
+  "confusion_matrix": [
+    [
+      33,
+      4,
+      0,
+      0
+    ],
+    [
+      2,
+      23,
+      6,
+      2
+    ],
+    [
+      9,
+      7,
+      19,
+      2
+    ],
+    [
+      0,
+      4,
+      2,
+      30
+    ]
+  ],
+  "fresh_real_eval": {
+    "path": "data/processed_sweep_20260507_001307/seed_123/fresh_real_eval.csv",
+    "rows": 27,
+    "accuracy": 0.6666666666666666,
+    "macro_f1": 0.49,
+    "per_class": {
+      "AVOID_PERSON": {
+        "precision": 0.42857142857142855,
+        "recall": 1.0,
+        "f1": 0.6
+      },
+      "MOVE_TO_CHAIR": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "CHECK_TABLE": {
+        "precision": 1.0,
+        "recall": 0.25,
+        "f1": 0.4
+      },
+      "EXPLORE": {
+        "precision": 0.9230769230769231,
+        "recall": 1.0,
+        "f1": 0.9600000000000001
+      }
+    },
+    "confusion_matrix": [
+      [
+        3,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        4,
+        4,
+        3,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        12
+      ]
+    ]
+  }
+}

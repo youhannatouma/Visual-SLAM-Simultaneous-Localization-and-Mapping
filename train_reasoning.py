@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import random
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,72 +11,71 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-from reasoning import ACTION_CLASSES, ReasoningGRU as ReasoningModel
+from reasoning import ACTION_CLASSES, FEATURE_SIZE, ReasoningGRU as ReasoningModel, SEQUENCE_LENGTH
 
 
 HUGE_DATASET_THRESHOLD = 50000
 
 
-class ReasoningDataset(Dataset):
-    def __init__(self, csv_path):
-        if not os.path.exists(csv_path):
-            raise FileNotFoundError(f"Training file not found: {csv_path}")
+def load_clean_frame(csv_path):
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"Training file not found: {csv_path}")
 
-        df = pd.read_csv(csv_path)
-        if df.empty:
-            raise ValueError(f"Dataset is empty: {csv_path}")
-        if "label" not in df.columns:
-            raise ValueError(f"Dataset missing 'label' column: {csv_path}")
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        raise ValueError(f"Dataset is empty: {csv_path}")
+    if "label" not in df.columns:
+        raise ValueError(f"Dataset missing 'label' column: {csv_path}")
 
-        feature_cols = [c for c in df.columns if c.startswith("f") and c[1:].isdigit()]
-        if not feature_cols:
-            raise ValueError(f"No feature columns f0..fN found in {csv_path}")
-        feature_cols = sorted(feature_cols, key=lambda c: int(c[1:]))
+    feature_cols = [c for c in df.columns if c.startswith("f") and c[1:].isdigit()]
+    if not feature_cols:
+        raise ValueError(f"No feature columns f0..fN found in {csv_path}")
+    feature_cols = sorted(feature_cols, key=lambda c: int(c[1:]))
 
-        features_df = df[feature_cols].apply(pd.to_numeric, errors="coerce")
-        labels_raw = df["label"].astype(str)
+    features_df = df[feature_cols].apply(pd.to_numeric, errors="coerce")
+    labels_raw = df["label"].astype(str)
 
-        valid_mask = features_df.notna().all(axis=1) & labels_raw.isin(ACTION_CLASSES)
-        features_df = features_df.loc[valid_mask]
-        labels_raw = labels_raw.loc[valid_mask]
+    valid_mask = (
+        features_df.notna().all(axis=1)
+        & np.isfinite(features_df.to_numpy(dtype=np.float32)).all(axis=1)
+        & labels_raw.isin(ACTION_CLASSES)
+    )
+    features_df = features_df.loc[valid_mask]
+    labels_raw = labels_raw.loc[valid_mask]
 
-        if features_df.empty:
-            raise ValueError(f"No valid rows after cleaning in {csv_path}")
+    if features_df.empty:
+        raise ValueError(f"No valid rows after cleaning in {csv_path}")
+    if len(feature_cols) != FEATURE_SIZE:
+        raise ValueError(
+            f"Expected {FEATURE_SIZE} canonical features in {csv_path}, "
+            f"found {len(feature_cols)}"
+        )
 
-        self.features = features_df.to_numpy(dtype=np.float32)
-        self.labels = labels_raw.map(ACTION_CLASSES.index).to_numpy(dtype=np.int64)
-        self.feature_cols = feature_cols
-        self.feature_size = self.features.shape[1]
+    return (
+        features_df.to_numpy(dtype=np.float32),
+        labels_raw.map(ACTION_CLASSES.index).to_numpy(dtype=np.int64),
+        feature_cols,
+    )
 
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        return torch.from_numpy(self.features[idx]), torch.tensor(self.labels[idx], dtype=torch.long)
 
 class SequenceDataset(Dataset):
-    def __init__(self, csv_path, sequence_length=10):
-        df = pd.read_csv(csv_path)
-
-        feature_cols = [
-            c for c in df.columns
-            if c.startswith("f")
-        ]
-        nan_count = df[feature_cols].isna().sum().sum()
-        print(f"[Dataset] {csv_path} NaNs found: {nan_count}")
-
-        self.features = df[feature_cols].values.astype(np.float32)
-        self.labels = df["label"].map(ACTION_CLASSES.index).values
-
+    def __init__(self, csv_path, sequence_length=SEQUENCE_LENGTH):
+        self.features, self.labels, self.feature_cols = load_clean_frame(csv_path)
         self.sequence_length = sequence_length
         self.feature_size = self.features.shape[1]
 
+        if len(self.features) < self.sequence_length:
+            raise ValueError(
+                f"Dataset {csv_path} has {len(self.features)} valid rows, "
+                f"needs at least {self.sequence_length} for sequence training"
+            )
+
     def __len__(self):
-        return len(self.features) - self.sequence_length
+        return len(self.features) - self.sequence_length + 1
 
     def __getitem__(self, idx):
-        x = self.features[idx:idx+self.sequence_length]
-        y = self.labels[idx+self.sequence_length-1]
+        x = self.features[idx:idx + self.sequence_length]
+        y = self.labels[idx + self.sequence_length - 1]
 
         return (
             torch.tensor(x, dtype=torch.float32),
@@ -162,7 +162,7 @@ def evaluate_optional_dataset(model, csv_path, batch_size, device):
         return None
     if not os.path.exists(csv_path):
         return None
-    dataset = ReasoningDataset(csv_path)
+    dataset = SequenceDataset(csv_path, sequence_length=SEQUENCE_LENGTH)
     acc, y_true, y_pred = evaluate_model(model, dataset, batch_size, device)
     confusion, precision, recall, f1, macro_f1 = compute_classification_metrics(
         y_true, y_pred, len(ACTION_CLASSES)
@@ -184,13 +184,37 @@ def evaluate_optional_dataset(model, csv_path, batch_size, device):
     }
 
 
-def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch_size, lr, fresh_real_eval_path, algorithm):
-    if algorithm.lower() != "mlp":
-        raise ValueError("Only MLP is supported for reasoning training in this project")
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-    train_dataset = SequenceDataset(train_path, sequence_length=10)
-    val_dataset = SequenceDataset(val_path, sequence_length=10)
-    test_dataset = SequenceDataset(test_path, sequence_length=10)
+
+def train(
+    train_path,
+    val_path,
+    test_path,
+    model_path,
+    report_dir,
+    epochs,
+    batch_size,
+    lr,
+    fresh_real_eval_path,
+    algorithm,
+    seed,
+):
+    if algorithm.lower() != "gru":
+        raise ValueError("Only GRU is supported for reasoning training in this project")
+
+    set_seed(seed)
+
+    train_dataset = SequenceDataset(train_path, sequence_length=SEQUENCE_LENGTH)
+    val_dataset = SequenceDataset(val_path, sequence_length=SEQUENCE_LENGTH)
+    test_dataset = SequenceDataset(test_path, sequence_length=SEQUENCE_LENGTH)
 
     total_rows = len(train_dataset) + len(val_dataset) + len(test_dataset)
     if total_rows >= HUGE_DATASET_THRESHOLD:
@@ -203,12 +227,19 @@ def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch
     if train_dataset.feature_size != val_dataset.feature_size or train_dataset.feature_size != test_dataset.feature_size:
         raise ValueError("Feature-size mismatch across train/val/test datasets")
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        generator=generator,
+    )
 
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     os.makedirs(report_dir, exist_ok=True)
 
-    model = ReasoningModel(train_dataset.feature_size)  # MLP
+    model = ReasoningModel(train_dataset.feature_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -275,7 +306,11 @@ def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch
     save_confusion_matrix(confusion, cm_path)
 
     metrics = {
-        "model_algorithm": "mlp",
+        "model_algorithm": "gru",
+        "sequence_length": SEQUENCE_LENGTH,
+        "feature_size": train_dataset.feature_size,
+        "feature_columns": train_dataset.feature_cols,
+        "seed": int(seed),
         "threshold_local_rows": HUGE_DATASET_THRESHOLD,
         "dataset_rows": {
             "train": len(train_dataset),
@@ -327,7 +362,8 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--fresh-real-eval", default="", help="Optional held-out fresh real eval CSV")
-    parser.add_argument("--algorithm", default="mlp", choices=["mlp"], help="Training algorithm (locked to MLP)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
+    parser.add_argument("--algorithm", default="gru", choices=["gru"], help="Training algorithm (locked to GRU)")
     return parser.parse_args()
 
 
@@ -344,4 +380,5 @@ if __name__ == "__main__":
         lr=args.lr,
         fresh_real_eval_path=args.fresh_real_eval,
         algorithm=args.algorithm,
+        seed=args.seed,
     )

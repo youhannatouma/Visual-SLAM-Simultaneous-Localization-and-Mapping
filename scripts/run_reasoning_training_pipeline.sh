@@ -4,19 +4,21 @@ set -euo pipefail
 INPUT_GLOB="data/raw/*.csv"
 OUT_DIR="data/processed"
 REPORT="reports/dataset_audit.json"
+REPORT_DIR="reports"
 MANIFEST_PATH="data/manifest/dataset_manifest.json"
 CHANGELOG_PATH="data/manifest/CHANGELOG.md"
 MIN_PER_CLASS=50
 MAX_IMBALANCE=1.3
 MIN_REAL_SHARE=0.6
 MAX_SYNTHETIC_SHARE=0.4
-BALANCE="cap"
+BALANCE="oversample"
 SEED=42
 TRAIN_EPOCHS=30
 TRAIN_BATCH_SIZE=32
 TRAIN_LR=1e-3
 COLLECT_FIRST=0
 PYTHON_BIN=".venv311/bin/python"
+MODEL_PATH="models/reasoning_model.pt"
 ALLOW_ARCHIVE_EXPERIMENT=0
 DISK_MIN_FREE_GB=1.0
 PRUNE=1
@@ -25,6 +27,8 @@ PROMOTION_SUMMARY_PATH="reports/promotion_summary.json"
 FRESH_REAL_MIN_IMPROVE_ACC=0.10
 FRESH_REAL_MIN_IMPROVE_MACRO_F1=0.10
 ESTABLISH_PROMOTION_BASELINE=0
+PROMOTION_WRITE_BASELINE=1
+PROMOTION_STRICT=1
 
 usage() {
   cat <<USAGE
@@ -36,22 +40,26 @@ Options:
   --input-glob <glob>            Raw input glob (default: data/raw/*.csv).
   --out-dir <dir>                Processed output directory (default: data/processed).
   --report <path>                Audit report path (default: reports/dataset_audit.json).
+  --report-dir <dir>             Report output directory (default: reports).
   --manifest-path <path>         Dataset manifest output (default: data/manifest/dataset_manifest.json).
   --changelog-path <path>        Dataset changelog path (default: data/manifest/CHANGELOG.md).
   --min-per-class <n>            Minimum samples per class (default: 50).
   --max-imbalance <ratio>        Max class imbalance ratio (default: 1.3).
   --min-real-share <ratio>       Minimum real data share gate (default: 0.6).
   --max-synthetic-share <ratio>  Maximum synthetic data share gate (default: 0.4).
-  --balance <none|cap|oversample> Balancing strategy (default: cap).
+  --balance <none|cap|oversample> Balancing strategy (default: oversample).
   --seed <n>                     Random seed for preprocessing (default: 42).
   --epochs <n>                   Training epochs (default: 30).
   --batch-size <n>               Training batch size (default: 32).
   --lr <float>                   Training learning rate (default: 1e-3).
+  --model-path <path>            Model output path (default: models/reasoning_model.pt).
   --allow-archive-experiment     Allow training from globs that include data/raw_archive.
   --disk-min-free-gb <n>         Minimum free disk guard before running (default: 1.0).
   --no-prune                     Disable aggressive pruning preflight.
   --promotion-baseline-path <path> Baseline metrics used for promotion checks (default: reports/metrics_promoted_baseline.json).
   --promotion-summary <path>     Promotion summary JSON output (default: reports/promotion_summary.json).
+  --no-promotion-write           Do not update the promoted baseline when a run is promotable.
+  --allow-non-promotable         Do not exit with an error when promotion gates fail.
   --fresh-real-min-improve-acc <x> Minimum required fresh-real accuracy improvement vs promoted baseline (default: 0.10).
   --fresh-real-min-improve-macro-f1 <x> Minimum required fresh-real macro F1 improvement vs promoted baseline (default: 0.10).
   --establish-promotion-baseline If baseline is missing, save current metrics as baseline and mark run non-promotable.
@@ -79,6 +87,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --report)
       REPORT="$2"
+      shift 2
+      ;;
+    --report-dir)
+      REPORT_DIR="$2"
       shift 2
       ;;
     --manifest-path)
@@ -125,6 +137,10 @@ while [[ $# -gt 0 ]]; do
       TRAIN_LR="$2"
       shift 2
       ;;
+    --model-path)
+      MODEL_PATH="$2"
+      shift 2
+      ;;
     --allow-archive-experiment)
       ALLOW_ARCHIVE_EXPERIMENT=1
       shift
@@ -144,6 +160,14 @@ while [[ $# -gt 0 ]]; do
     --promotion-summary)
       PROMOTION_SUMMARY_PATH="$2"
       shift 2
+      ;;
+    --no-promotion-write)
+      PROMOTION_WRITE_BASELINE=0
+      shift
+      ;;
+    --allow-non-promotable)
+      PROMOTION_STRICT=0
+      shift
       ;;
     --fresh-real-min-improve-acc)
       FRESH_REAL_MIN_IMPROVE_ACC="$2"
@@ -181,7 +205,7 @@ if [[ "$COLLECT_FIRST" -eq 1 ]]; then
   "$PYTHON_BIN" main.py
 fi
 
-mkdir -p "$(dirname "$REPORT")" "$OUT_DIR"
+mkdir -p "$(dirname "$REPORT")" "$OUT_DIR" "$REPORT_DIR" "$(dirname "$MODEL_PATH")"
 
 echo "[0/5] Running disk preflight + retention..."
 PRUNE_ARGS=()
@@ -245,26 +269,30 @@ echo "[3.5/4] Writing dataset manifest snapshot..."
   --changelog-path "$CHANGELOG_PATH"
 
 echo "[4/4] Training reasoning model..."
-if [[ -f reports/metrics.json ]]; then
-  cp reports/metrics.json reports/metrics_previous.json
+METRICS_PATH="$REPORT_DIR/metrics.json"
+if [[ -f "$METRICS_PATH" ]]; then
+  cp "$METRICS_PATH" "$REPORT_DIR/metrics_previous.json"
 fi
 "$PYTHON_BIN" train_reasoning.py \
   --train "$OUT_DIR/train.csv" \
   --val "$OUT_DIR/val.csv" \
   --test "$OUT_DIR/test.csv" \
   --fresh-real-eval "$OUT_DIR/fresh_real_eval.csv" \
+  --report-dir "$REPORT_DIR" \
+  --model "$MODEL_PATH" \
   --epochs "$TRAIN_EPOCHS" \
   --batch-size "$TRAIN_BATCH_SIZE" \
-  --lr "$TRAIN_LR"
+  --lr "$TRAIN_LR" \
+  --seed "$SEED"
 
 "$PYTHON_BIN" - <<PY
 import json
 import shutil
 from pathlib import Path
 
-new_path = Path("reports/metrics.json")
+new_path = Path(r'''$REPORT_DIR''') / "metrics.json"
 if not new_path.exists():
-    raise SystemExit("Promotion gate failed: reports/metrics.json is missing.")
+  raise SystemExit(f"Promotion gate failed: {new_path} is missing.")
 
 baseline_path = Path(r'''$PROMOTION_BASELINE_PATH''')
 summary_path = Path(r'''$PROMOTION_SUMMARY_PATH''')
@@ -274,6 +302,8 @@ baseline_path.parent.mkdir(parents=True, exist_ok=True)
 fresh_acc_threshold = float(r'''$FRESH_REAL_MIN_IMPROVE_ACC''')
 fresh_f1_threshold = float(r'''$FRESH_REAL_MIN_IMPROVE_MACRO_F1''')
 establish_mode = bool(int(r'''$ESTABLISH_PROMOTION_BASELINE'''))
+write_baseline = bool(int(r'''$PROMOTION_WRITE_BASELINE'''))
+strict_mode = bool(int(r'''$PROMOTION_STRICT'''))
 
 new = json.loads(new_path.read_text(encoding="utf-8"))
 
@@ -366,10 +396,13 @@ else:
         recommended_actions.append("Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.")
 
     if promotable:
+      if write_baseline:
         shutil.copy2(new_path, baseline_path)
         status = "promoted"
+      else:
+        status = "promotable_no_write"
     else:
-        status = "not_promoted"
+      status = "not_promoted"
 
 summary = {
     "status": status,
@@ -383,8 +416,8 @@ summary = {
 summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 print(f"Promotion summary: {summary_path}")
 
-if not promotable:
-    raise SystemExit("Promotion gate failed: run is non-promotable. See promotion summary JSON for details.")
+if not promotable and strict_mode:
+  raise SystemExit("Promotion gate failed: run is non-promotable. See promotion summary JSON for details.")
 PY
 
 echo "Pipeline completed successfully."

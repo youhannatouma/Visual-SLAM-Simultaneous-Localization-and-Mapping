@@ -408,3 +408,115 @@
 - class distribution: {'AVOID_PERSON': 50, 'MOVE_TO_CHAIR': 50, 'CHECK_TABLE': 50, 'EXPLORE': 50}
 - source distribution: {'real_media': 162, 'rebalance': 38}
 
+## v20260506_224715
+- timestamp: 1778096835
+- raw files: 4
+- raw rows: 840
+- fingerprint: 150de3ff40a4ab65e0a18c30dc519c3dd6033823b68dcdce3f58678fa735f56c
+- class distribution: {'AVOID_PERSON': 206, 'MOVE_TO_CHAIR': 222, 'CHECK_TABLE': 206, 'EXPLORE': 206}
+- source distribution: {'real_media': 840}
+
+## v20260506_225245
+- timestamp: 1778097165
+- raw files: 6
+- raw rows: 960
+- fingerprint: 8ff67d6f01642890e716083a5db676420d0a49c2582362b7a0c36b7cbcb8a968
+- class distribution: {'AVOID_PERSON': 246, 'MOVE_TO_CHAIR': 262, 'CHECK_TABLE': 206, 'EXPLORE': 246}
+- source distribution: {'real_media': 960}
+
+## v20260506_230329
+- timestamp: 1778097809
+- raw files: 7
+- raw rows: 1040
+- fingerprint: f470345c2c8b1fcb3725edd2a62510fa59aae41896d9f9a97fe66ddde207af0f
+- class distribution: {'AVOID_PERSON': 246, 'MOVE_TO_CHAIR': 262, 'CHECK_TABLE': 286, 'EXPLORE': 246}
+- source distribution: {'real_media': 1040}
+
+## v20260506_230606
+- timestamp: 1778097966
+- raw files: 8
+- raw rows: 1160
+- fingerprint: 66bed9fd679b447d99f1645a4a5fd1271c985c37ec1093bbe7ec6e58556622bc
+- class distribution: {'AVOID_PERSON': 261, 'MOVE_TO_CHAIR': 327, 'CHECK_TABLE': 311, 'EXPLORE': 261}
+- source distribution: {'real_media': 1160}
+
+## v20260506_230937
+- timestamp: 1778098177
+- raw files: 8
+- raw rows: 1160
+- fingerprint: c55fae23b929577e398dd41f72d567d2343139fc68e7f5fbe568cb004cd5172a
+- class distribution: {'AVOID_PERSON': 261, 'MOVE_TO_CHAIR': 327, 'CHECK_TABLE': 311, 'EXPLORE': 261}
+- source distribution: {'real_media': 1160}
+
+## v20260506_231221
+- timestamp: 1778098341
+- raw files: 8
+- raw rows: 1105
+- fingerprint: 4450bae6324339983a3128a38ae373ba8371fde5224cc5e84877a186caf0f259
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 318, 'EXPLORE': 258}
+- source distribution: {'real_media': 1105}
+
+## v20260506_231734
+- timestamp: 1778098654
+- raw files: 6
+- raw rows: 914
+- fingerprint: be80fb3e19cdd0697abb74c0addf70ee4ad9a60e6aa095ca7aba996350fb2e94
+- class distribution: {'AVOID_PERSON': 226, 'MOVE_TO_CHAIR': 240, 'CHECK_TABLE': 224, 'EXPLORE': 224}
+- source distribution: {'real_media': 914}
+
+## v20260506_231842
+- timestamp: 1778098722
+- raw files: 8
+- raw rows: 1105
+- fingerprint: 4450bae6324339983a3128a38ae373ba8371fde5224cc5e84877a186caf0f259
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 318, 'EXPLORE': 258}
+- source distribution: {'real_media': 1105}
+
+## v20260506_233347
+- timestamp: 1778099627
+- raw files: 8
+- raw rows: 1020
+- fingerprint: d57afff86d94ea3716c91c0c970be137ff59b63409e65dd435bb075217d7df2b
+- class distribution: {'AVOID_PERSON': 238, 'MOVE_TO_CHAIR': 254, 'CHECK_TABLE': 278, 'EXPLORE': 250}
+- source distribution: {'real_media': 1020}
+
+## v20260506_234437
+- timestamp: 1778100277
+- raw files: 8
+- raw rows: 1033
+- fingerprint: 5a2539e3782bab2df71d101293ce756a52f3eedf97f9661d3ae87a7e15938bbb
+- class distribution: {'AVOID_PERSON': 246, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 278, 'EXPLORE': 238}
+- source distribution: {'real_media': 1033}
+
+## v20260506_234512
+- timestamp: 1778100312
+- raw files: 8
+- raw rows: 1105
+- fingerprint: 4450bae6324339983a3128a38ae373ba8371fde5224cc5e84877a186caf0f259
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 318, 'EXPLORE': 258}
+- source distribution: {'real_media': 1105}
+
+## v20260506_234700
+- timestamp: 1778100420
+- raw files: 8
+- raw rows: 1105
+- fingerprint: 4450bae6324339983a3128a38ae373ba8371fde5224cc5e84877a186caf0f259
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 318, 'EXPLORE': 258}
+- source distribution: {'real_media': 1105}
+
+## v20260506_234935
+- timestamp: 1778100575
+- raw files: 9
+- raw rows: 1125
+- fingerprint: 1c4ff1f7bd5cb00bcb28227b8c96173c70a58da54c11e7005a83cc9d0112379a
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 291, 'CHECK_TABLE': 318, 'EXPLORE': 258}
+- source distribution: {'real_media': 1125}
+
+## v20260506_235012
+- timestamp: 1778100612
+- raw files: 8
+- raw rows: 1105
+- fingerprint: 4450bae6324339983a3128a38ae373ba8371fde5224cc5e84877a186caf0f259
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 318, 'EXPLORE': 258}
+- source distribution: {'real_media': 1105}
+

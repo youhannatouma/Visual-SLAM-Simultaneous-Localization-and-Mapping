@@ -179,6 +179,11 @@ def parse_args():
         "--loop", action="store_true",
         help="Loop the video indefinitely (only relevant with --video)."
     )
+    p.add_argument(
+        "--no-depth",
+        action="store_true",
+        help="Disable MiDaS depth estimation and hide the depth window.",
+    )
     return p.parse_args()
 
 
@@ -208,28 +213,32 @@ def main():
     # ---------------------------------------------------
     # DEPTH ESTIMATION (MiDaS)
     # ---------------------------------------------------
-    print("[Depth] Loading MiDaS...")
+    use_depth = not args.no_depth
+    if use_depth:
+        print("[Depth] Loading MiDaS...")
 
-    midas = torch.hub.load(
-        "intel-isl/MiDaS",
-        "MiDaS_small"
-    )
+        midas = torch.hub.load(
+            "intel-isl/MiDaS",
+            "MiDaS_small"
+        )
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+        device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
-    midas.to(device)
-    midas.eval()
+        midas.to(device)
+        midas.eval()
 
-    midas_transforms = torch.hub.load(
-        "intel-isl/MiDaS",
-        "transforms"
-    )
+        midas_transforms = torch.hub.load(
+            "intel-isl/MiDaS",
+            "transforms"
+        )
 
-    transform = midas_transforms.small_transform
+        transform = midas_transforms.small_transform
 
-    print("[Depth] MiDaS ready.")
+        print("[Depth] MiDaS ready.")
+    else:
+        print("[Depth] Disabled.")
 
     orb = cv2.ORB_create(nfeatures=400)
     bf  = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
@@ -281,34 +290,35 @@ def main():
         # ---------------------------------------------------
         # DEPTH ESTIMATION
         # ---------------------------------------------------
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if use_depth:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        input_batch = transform(rgb).to(device)
+            input_batch = transform(rgb).to(device)
 
-        with torch.no_grad():
-            prediction = midas(input_batch)
+            with torch.no_grad():
+                prediction = midas(input_batch)
 
-            prediction = F.interpolate(
-                prediction.unsqueeze(1),
-                size=frame.shape[:2],
-                mode="bicubic",
-                align_corners=False
-            ).squeeze()
+                prediction = F.interpolate(
+                    prediction.unsqueeze(1),
+                    size=frame.shape[:2],
+                    mode="bicubic",
+                    align_corners=False
+                ).squeeze()
 
-        depth_map = prediction.cpu().numpy()
-        
-        depth_normalized = cv2.normalize(
-            depth_map,
-            None,
-            0,
-            255,
-            cv2.NORM_MINMAX
-        ).astype(np.uint8)
+            depth_map = prediction.cpu().numpy()
 
-        depth_colored = cv2.applyColorMap(
-            depth_normalized,
-            cv2.COLORMAP_MAGMA
-        )
+            depth_normalized = cv2.normalize(
+                depth_map,
+                None,
+                0,
+                255,
+                cv2.NORM_MINMAX
+            ).astype(np.uint8)
+
+            depth_colored = cv2.applyColorMap(
+                depth_normalized,
+                cv2.COLORMAP_MAGMA
+            )
 
         with state.lock:
             state.frame = frame.copy()
@@ -417,7 +427,8 @@ def main():
         )
 
         cv2.imshow("Occupancy Map", occ_vis)
-        cv2.imshow("Depth Map", depth_colored)
+        if use_depth:
+            cv2.imshow("Depth Map", depth_colored)
 
         key = cv2.waitKey(frame_delay) & 0xFF
         if key == 27:
