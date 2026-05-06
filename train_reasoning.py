@@ -10,7 +10,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-from reasoning import ACTION_CLASSES, ReasoningModel
+from reasoning import ACTION_CLASSES, ReasoningGRU as ReasoningModel
+
 
 HUGE_DATASET_THRESHOLD = 50000
 
@@ -52,7 +53,35 @@ class ReasoningDataset(Dataset):
     def __getitem__(self, idx):
         return torch.from_numpy(self.features[idx]), torch.tensor(self.labels[idx], dtype=torch.long)
 
+class SequenceDataset(Dataset):
+    def __init__(self, csv_path, sequence_length=10):
+        df = pd.read_csv(csv_path)
 
+        feature_cols = [
+            c for c in df.columns
+            if c.startswith("f")
+        ]
+        nan_count = df[feature_cols].isna().sum().sum()
+        print(f"[Dataset] {csv_path} NaNs found: {nan_count}")
+
+        self.features = df[feature_cols].values.astype(np.float32)
+        self.labels = df["label"].map(ACTION_CLASSES.index).values
+
+        self.sequence_length = sequence_length
+        self.feature_size = self.features.shape[1]
+
+    def __len__(self):
+        return len(self.features) - self.sequence_length
+
+    def __getitem__(self, idx):
+        x = self.features[idx:idx+self.sequence_length]
+        y = self.labels[idx+self.sequence_length-1]
+
+        return (
+            torch.tensor(x, dtype=torch.float32),
+            torch.tensor(y, dtype=torch.long)
+        )
+        
 def evaluate_model(model, dataset, batch_size, device):
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     model.eval()
@@ -159,9 +188,9 @@ def train(train_path, val_path, test_path, model_path, report_dir, epochs, batch
     if algorithm.lower() != "mlp":
         raise ValueError("Only MLP is supported for reasoning training in this project")
 
-    train_dataset = ReasoningDataset(train_path)
-    val_dataset = ReasoningDataset(val_path)
-    test_dataset = ReasoningDataset(test_path)
+    train_dataset = SequenceDataset(train_path, sequence_length=10)
+    val_dataset = SequenceDataset(val_path, sequence_length=10)
+    test_dataset = SequenceDataset(test_path, sequence_length=10)
 
     total_rows = len(train_dataset) + len(val_dataset) + len(test_dataset)
     if total_rows >= HUGE_DATASET_THRESHOLD:

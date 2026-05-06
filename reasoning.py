@@ -4,11 +4,21 @@ import os
 import time
 from collections import deque, Counter
 
+import numpy as np
 import torch
 import torch.nn as nn
 
 LABEL_CLASSES = ["person", "chair", "table", "sofa", "tv", "other"]
-ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
+ACTION_CLASSES = [
+    "MOVE_FORWARD",
+    "TURN_LEFT",
+    "TURN_RIGHT",
+    "STOP",
+    "AVOID_PERSON",
+    "MOVE_TO_CHAIR",
+    "CHECK_TABLE",
+    "EXPLORE"
+]
 MOTION_CLASSES = ["NONE", "LEFT", "RIGHT", "UP", "DOWN"]
 NUM_OBJECT_SLOTS = 3
 
@@ -30,23 +40,31 @@ NUM_OBJECT_SLOTS = 3
 #   Normalizes the values between layers. Prevents "exploding" or "vanishing"
 #   gradients that slow down or break training.
 # =============================================================================
-class ReasoningModel(nn.Module):
-    def __init__(self, input_size):
+class ReasoningGRU(nn.Module):
+    def __init__(self, input_size, hidden_size=128, num_layers=2):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_size, 128),
-            nn.BatchNorm1d(128),
+
+        self.gru = nn.GRU(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=0.3
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_size, 64),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, len(ACTION_CLASSES))
+            nn.Linear(64, len(ACTION_CLASSES))
         )
 
     def forward(self, x):
-        return self.net(x)
+        out, _ = self.gru(x)
+
+        final = out[:, -1]
+
+        return self.classifier(final)
 
 
 class ReasoningEngine:
@@ -60,8 +78,11 @@ class ReasoningEngine:
         self.tracked_objects = {}
         self.next_id = 0
 
+        self.trajectory_history = {}
+        
         # BBox Smoothing
         self.decision_history = deque(maxlen=10)
+        self.action_history = deque(maxlen=8)
         self.bbox_history = {}  # ID -> deque(maxlen=5)
 
         # =================================================================
@@ -97,7 +118,7 @@ class ReasoningEngine:
             # silently and fall back to rule-based reasoning. This is intentional.
             input_size = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2 + len(LABEL_CLASSES)
             try:
-                self.model = ReasoningModel(input_size).to(self.device)
+                self.model = ReasoningGRU(input_size).to(self.device)
                 self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
                 self.model.eval()
                 print(f"[ReasoningEngine] Loaded model from '{self.model_path}'")
@@ -141,6 +162,15 @@ class ReasoningEngine:
         onehot[MOTION_CLASSES.index(motion)] = 1.0
         return onehot
 
+    def compute_velocity(points):
+        if len(points) < 2:
+            return 0, 0
+
+        x1, y1 = points[-2]
+        x2, y2 = points[-1]
+
+        return x2 - x1, y2 - y1
+
     def track_objects(self, detections):
         updated = {}
         used_ids = set()
@@ -183,6 +213,11 @@ class ReasoningEngine:
             det["center"] = ((avg_x1 + avg_x2) // 2, (avg_y1 + avg_y2) // 2)
             det["area"] = (avg_x2 - avg_x1) * (avg_y2 - avg_y1)
 
+            if obj_id not in self.trajectory_history:
+                self.trajectory_history[obj_id] = deque(maxlen=15)
+
+            self.trajectory_history[obj_id].append(det["center"])
+            
             updated[obj_id] = det
             used_ids.add(obj_id)
 
@@ -273,8 +308,10 @@ class ReasoningEngine:
             label_onehot = self.label_to_onehot(det["label"])
             conf = det["confidence"]
             area = det["area"] / frame_area
-            dx = (det["center"][0] - frame_center[0]) / frame_center[0]
-            dy = (det["center"][1] - frame_center[1]) / frame_center[1]
+            cx, cy = frame_center
+            dx = 0.0 if cx == 0 else (det["center"][0] - cx) / cx
+            dy = 0.0 if cy == 0 else (det["center"][1] - cy) / cy
+            
             slot_features.extend(label_onehot + [conf, area, dx, dy])
 
         while len(slot_features) < NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4):
@@ -298,7 +335,13 @@ class ReasoningEngine:
             for label in LABEL_CLASSES
         ]
 
-        return slot_features + motion_onehot + [motion_flag, object_count] + temporal_features
+        features = np.array(slot_features + motion_onehot + [motion_flag, object_count] + temporal_features, dtype=np.float32)
+
+        # HARD SAFETY CLEANUP (critical)
+        features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
+        return features.tolist()
+
 
     def predict_action(self, features):
         if self.model is None:
@@ -315,7 +358,22 @@ class ReasoningEngine:
         person = next((obj for obj in tracked.values() if obj["label"] == "person"), None)
         chair = next((obj for obj in tracked.values() if obj["label"] == "chair"), None)
         table = next((obj for obj in tracked.values() if obj["label"] == "table"), None)
+        if action == "MOVE_FORWARD":
+            self.state = "NAVIGATE"
+            return "MOVE FORWARD"
 
+        if action == "TURN_LEFT":
+            self.state = "NAVIGATE"
+            return "TURN LEFT"
+
+        if action == "TURN_RIGHT":
+            self.state = "NAVIGATE"
+            return "TURN RIGHT"
+
+        if action == "STOP":
+            self.state = "STOP"
+            return "STOP"
+        
         if action == "AVOID_PERSON":
             self.state = "AVOID"
             if person:
@@ -351,7 +409,7 @@ class ReasoningEngine:
         action_label,
         output_path="data/raw/reasoning_data.csv",
         source_type="manual_live",
-        min_confidence=0.50,
+        min_confidence=0.65,
     ):
         # =====================================================================
         # IMPROVEMENT 2: QUALITY GATE
@@ -365,7 +423,18 @@ class ReasoningEngine:
         #
         # This ensures ONLY high-quality, clear observations are used for training.
         # =====================================================================
+        if len(detections) > 8:
+            print("[QualityGate] REJECTED: too many objects")
+            return False
         if detections:
+            large_objects = [
+                d for d in detections
+                if d["area"] > frame_area * 0.01
+            ]
+
+            if not large_objects:
+                print("[QualityGate] REJECTED: objects too small")
+                return False
             avg_conf = sum(d["confidence"] for d in detections) / len(detections)
             if avg_conf < min_confidence:
                 print(f"[QualityGate] REJECTED: avg_conf={avg_conf:.2f} < threshold={min_confidence:.2f}")
@@ -389,11 +458,34 @@ class ReasoningEngine:
         self.update_memory(tracked)
 
         raw_decision = ""
+        
         if use_model and self.model is not None:
-            features = self.extract_features(detections, frame_center, frame_area, motion_text)
+            features = self.extract_features(
+                detections,
+                frame_center,
+                frame_area,
+                motion_text
+            )
+
             action = self.predict_action(features)
+
             if action is not None:
-                raw_decision = self.format_action(action, tracked, frame_center, frame_area)
+
+                # ---------------------------------------------------
+                # TEMPORAL ACTION SMOOTHING
+                # ---------------------------------------------------
+                self.action_history.append(action)
+
+                final_action = Counter(
+                    self.action_history
+                ).most_common(1)[0][0]
+
+                raw_decision = self.format_action(
+                    final_action,
+                    tracked,
+                    frame_center,
+                    frame_area
+                )
 
         if not raw_decision:
             nearest_person, person_threat, best_target = self.choose_target(tracked, frame_center, frame_area)
@@ -414,10 +506,13 @@ class ReasoningEngine:
                 direction = self.frame_direction(best_target["center"], frame_center)
                 raw_decision = f"CHECK TABLE ({direction})"
             else:
-                self.state = "EXPLORE"
-                if motion_text and motion_text != "No movement":
-                    raw_decision = f"EXPLORE / {motion_text}"
+
+                if motion_text == "No movement":
+                    self.state = "NAVIGATE"
+                    raw_decision = "MOVE FORWARD"
+
                 else:
+                    self.state = "EXPLORE"
                     raw_decision = "EXPLORE AND SEARCH"
 
         # Hysteresis: Return the most common decision in recent history

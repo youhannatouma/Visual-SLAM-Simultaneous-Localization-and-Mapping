@@ -2,116 +2,138 @@
   "model_algorithm": "mlp",
   "threshold_local_rows": 50000,
   "dataset_rows": {
-    "train": 68,
-    "val": 12,
-    "test": 20,
-    "total": 100
+    "train": 893,
+    "val": 183,
+    "test": 184,
+    "total": 1260
   },
   "accuracy": {
-    "best_val": 0.8333333333333334,
-    "test": 0.75
+    "best_val": 0.0,
+    "test": 0.0
   },
-  "macro_f1": 0.7113997113997115,
+  "macro_f1": 0.0,
   "per_class": {
+    "MOVE_FORWARD": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "TURN_LEFT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "TURN_RIGHT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "STOP": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
     "AVOID_PERSON": {
-      "precision": 1.0,
-      "recall": 0.8,
-      "f1": 0.888888888888889
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "MOVE_TO_CHAIR": {
-      "precision": 0.8333333333333334,
-      "recall": 1.0,
-      "f1": 0.9090909090909091
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "CHECK_TABLE": {
-      "precision": 1.0,
-      "recall": 0.2,
-      "f1": 0.33333333333333337
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "EXPLORE": {
-      "precision": 0.5555555555555556,
-      "recall": 1.0,
-      "f1": 0.7142857142857143
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     }
   },
   "confusion_matrix": [
     [
-      4,
-      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
       0,
       0
     ],
     [
       0,
-      5,
+      0,
+      0,
+      0,
+      0,
+      0,
       0,
       0
     ],
     [
       0,
       0,
-      1,
-      4
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
     ],
     [
       0,
       0,
       0,
-      5
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      74,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      38,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      29,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      43,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
     ]
-  ],
-  "fresh_real_eval": {
-    "path": "data/processed/fresh_real_eval.csv",
-    "rows": 84,
-    "accuracy": 0.7619047619047619,
-    "macro_f1": 0.6575201288244767,
-    "per_class": {
-      "AVOID_PERSON": {
-        "precision": 1.0,
-        "recall": 0.84,
-        "f1": 0.9130434782608696
-      },
-      "MOVE_TO_CHAIR": {
-        "precision": 0.8620689655172413,
-        "recall": 1.0,
-        "f1": 0.9259259259259259
-      },
-      "CHECK_TABLE": {
-        "precision": 1.0,
-        "recall": 0.058823529411764705,
-        "f1": 0.1111111111111111
-      },
-      "EXPLORE": {
-        "precision": 0.5151515151515151,
-        "recall": 1.0,
-        "f1": 0.6799999999999999
-      }
-    },
-    "confusion_matrix": [
-      [
-        21,
-        4,
-        0,
-        0
-      ],
-      [
-        0,
-        25,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        1,
-        16
-      ],
-      [
-        0,
-        0,
-        0,
-        17
-      ]
-    ]
-  }
+  ]
 }
