@@ -520,3 +520,11 @@
 - class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 271, 'CHECK_TABLE': 318, 'EXPLORE': 258}
 - source distribution: {'real_media': 1105}
 
+## v20260507_005714
+- timestamp: 1778104634
+- raw files: 10
+- raw rows: 1167
+- fingerprint: 83151be3e6a94c6544cdca0ef24ba606e77d140cb41edb282f4495943e4d10ae
+- class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 331, 'CHECK_TABLE': 320, 'EXPLORE': 258}
+- source distribution: {'real_media': 1165, 'manual_live': 2}
+

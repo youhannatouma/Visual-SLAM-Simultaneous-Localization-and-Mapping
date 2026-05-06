@@ -45,14 +45,29 @@ def parse_args():
         help="Allow sources without applied review status.",
     )
     parser.add_argument(
+        "--mark-unreviewed-applied",
+        action="store_true",
+        help="Write applied review status entries for unreviewed sources that are used.",
+    )
+    parser.add_argument(
         "--target-label",
         default="MOVE_TO_CHAIR",
         help="Target label to keep in the recovery pool.",
     )
     parser.add_argument(
+        "--needs-review-only",
+        action="store_true",
+        help="Keep only rows where needs_review == 1 after label filtering.",
+    )
+    parser.add_argument(
         "--curation-csv",
         default="",
         help="Optional curation CSV with source_file, frame_index, and keep/drop columns.",
+    )
+    parser.add_argument(
+        "--exclude-existing-glob",
+        default="data/raw/*.csv",
+        help="Glob for existing raw CSVs to exclude from the recovery pool.",
     )
     parser.add_argument(
         "--export-candidates",
@@ -233,6 +248,49 @@ def write_review_status(status_dir, out_csv, total_rows):
     status_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def signature_row(row):
+    values = tuple(round(float(row[c]), 6) for c in FEATURE_COLS)
+    return values + (str(row["label"]),)
+
+
+def collect_existing_signatures(existing_glob, ignore_paths=None):
+    if not existing_glob:
+        return set()
+    ignore = {str(Path(p).resolve()) for p in (ignore_paths or [])}
+    signatures = set()
+    paths = sorted(glob.glob(existing_glob))
+    for path in paths:
+        if str(Path(path).resolve()) in ignore:
+            continue
+        try:
+            df = load_and_upgrade(Path(path))
+        except Exception:
+            continue
+        if "label" not in df.columns:
+            continue
+        df["label"] = normalize_label(df["label"])
+        df = ensure_feature_validity(df)
+        for _, row in df.iterrows():
+            try:
+                signatures.add(signature_row(row))
+            except Exception:
+                continue
+    return signatures
+
+
+def drop_existing_rows(df, signatures):
+    if not signatures:
+        return df
+    keep_mask = []
+    for _, row in df.iterrows():
+        try:
+            sig = signature_row(row)
+        except Exception:
+            sig = None
+        keep_mask.append(sig not in signatures)
+    return df.loc[keep_mask].copy()
+
+
 def main():
     args = parse_args()
 
@@ -253,10 +311,19 @@ def main():
         raise ValueError("No reviewed sources matched the provided inputs.")
 
     frames = []
+    source_rows = {}
     for path in sources:
         df = load_and_upgrade(Path(path))
         df["__source_csv"] = os.path.basename(path)
         frames.append(df)
+        source_rows[os.path.basename(path)] = len(df)
+
+    if args.allow_unreviewed and args.mark_unreviewed_applied:
+        for path in sources:
+            base = os.path.basename(path)
+            if base in reviewed:
+                continue
+            write_review_status(args.review_status_dir, path, source_rows.get(base, 0))
 
     merged = pd.concat(frames, ignore_index=True)
 
@@ -273,6 +340,21 @@ def main():
 
     merged["label"] = normalize_label(merged["label"])
     merged = merged[merged["label"] == target_label].copy()
+    if args.needs_review_only:
+        if "needs_review" not in merged.columns:
+            merged["needs_review"] = 0
+        needs_review = pd.to_numeric(merged["needs_review"], errors="coerce").fillna(0).astype(int)
+        merged = merged.loc[needs_review.eq(1)].copy()
+
+    out_csv = args.out_csv or f"data/raw/move_recovery_pool_{time.strftime('%Y%m%d')}.csv"
+    existing_signatures = collect_existing_signatures(
+        args.exclude_existing_glob,
+        ignore_paths=[out_csv],
+    )
+    if existing_signatures:
+        before_existing = len(merged)
+        merged = drop_existing_rows(merged, existing_signatures)
+        print("Dropped existing raw duplicates:", before_existing - len(merged))
 
     merged = apply_curation_filter(merged, args.curation_csv)
 

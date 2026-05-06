@@ -8,6 +8,8 @@
     "data/raw/media_labeled_stage2_check_table_train_20260506.csv",
     "data/raw/media_labeled_stage2_curated_train_20260506.csv",
     "data/raw/media_labeled_stage2_train_refix_20260506.csv",
+    "data/raw/move_recovery_pool_20260507.csv",
+    "data/raw/session_20260507_002204.csv",
     "data/raw/zz_fresh_real_holdout_20260506.csv"
   ],
   "balance": "oversample",
@@ -18,30 +20,30 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 1105,
-    "rows_after_dropna": 1105,
-    "rows_after_finite_check": 1105,
-    "rows_after_label_filter": 1105,
-    "rows_after_dedup": 885,
+    "rows_initial": 1167,
+    "rows_after_dropna": 1167,
+    "rows_after_finite_check": 1167,
+    "rows_after_label_filter": 1167,
+    "rows_after_dedup": 934,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 220,
+    "dropped_duplicates": 233,
     "feature_count": 43
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
       "AVOID_PERSON": 208,
-      "MOVE_TO_CHAIR": 214,
-      "CHECK_TABLE": 256,
+      "MOVE_TO_CHAIR": 262,
+      "CHECK_TABLE": 257,
       "EXPLORE": 207
     }
   },
   "source_quality": {
-    "real_rows": 885,
+    "real_rows": 934,
     "synthetic_rows": 0,
-    "total_clean": 885,
+    "total_clean": 934,
     "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
@@ -100,9 +102,9 @@
     "f42"
   ],
   "rows": {
-    "train": 680,
-    "val": 144,
+    "train": 700,
+    "val": 148,
     "test": 152,
-    "total": 976
+    "total": 1000
   }
 }

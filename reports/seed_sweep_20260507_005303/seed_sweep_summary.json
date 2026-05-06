@@ -1,0 +1,9 @@
+{
+  "baseline": "reports/metrics_promoted_baseline.json",
+  "runs": {
+    "17": "reports/seed_sweep_20260507_005303/seed_17/metrics.json",
+    "42": "reports/seed_sweep_20260507_005303/seed_42/metrics.json",
+    "123": "reports/seed_sweep_20260507_005303/seed_123/metrics.json"
+  },
+  "best": null
+}

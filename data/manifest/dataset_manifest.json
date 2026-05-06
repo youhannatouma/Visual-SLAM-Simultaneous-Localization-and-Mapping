@@ -1,6 +1,6 @@
 {
-  "dataset_version": "v20260506_235012",
-  "timestamp": 1778100612,
+  "dataset_version": "v20260507_005714",
+  "timestamp": 1778104634,
   "input_glob": "data/raw/*.csv",
   "raw_files": [
     {
@@ -39,49 +39,60 @@
       "sha256": "d4192c514b96d7e4ca57da3f3e5894d2b314787cfda623067350d54575a3bd1c"
     },
     {
+      "file": "data/raw/move_recovery_pool_20260507.csv",
+      "rows": 60,
+      "sha256": "0b17695f5670719ea5a753feb9a7e88ee6fa2fa6b314018ee90386ac9a6182ac"
+    },
+    {
+      "file": "data/raw/session_20260507_002204.csv",
+      "rows": 2,
+      "sha256": "b8a52ee48a84ab5df1a94914905fc92df88d85c0a2658c5ffb9583f9cf211a86"
+    },
+    {
       "file": "data/raw/zz_fresh_real_holdout_20260506.csv",
       "rows": 48,
       "sha256": "150c4e6dfb02323452789e7217da2cfe32b115c04d139b78031d27564fba8422"
     }
   ],
-  "raw_total_rows": 1105,
+  "raw_total_rows": 1167,
   "source_type_distribution": {
-    "real_media": 1105
+    "real_media": 1165,
+    "manual_live": 2
   },
   "class_distribution": {
     "AVOID_PERSON": 258,
-    "MOVE_TO_CHAIR": 271,
-    "CHECK_TABLE": 318,
+    "MOVE_TO_CHAIR": 331,
+    "CHECK_TABLE": 320,
     "EXPLORE": 258
   },
   "processed_files": [
     {
       "file": "data/processed/train.csv",
-      "sha256": "2e2fc92f8066e75f23f4d2be2e7e9454fe39ca79a0e88362fe24807858155fe0",
-      "bytes": 453089
+      "sha256": "7af80eeecac0c379fa109b92e1bdd556327d2454c10692e819775ff964957a44",
+      "bytes": 461422
     },
     {
       "file": "data/processed/val.csv",
-      "sha256": "b48f9c460eb353c17fa2b3900b5d27819e5800d05c5c8b3102fb80593b53ebb7",
-      "bytes": 98493
+      "sha256": "3caaa9ae9bc47571f30456b4b76446d29274bca5b9344dd9c9946912ac4c9b7f",
+      "bytes": 96194
     },
     {
       "file": "data/processed/test.csv",
-      "sha256": "188249759076afe5f1e205e30cb9b83168adcf32a0a3510e3e033b3af09d4e27",
-      "bytes": 104582
+      "sha256": "793156ce6b255713ce10f446455884d70134eaca7f627fcbe3ef77f096ce058f",
+      "bytes": 99078
     },
     {
       "file": "data/processed/fresh_real_eval.csv",
-      "sha256": "07a42685d775315667d50a44e21fa63f9b597745c10a6ea37161f5989ac81875",
-      "bytes": 21014
+      "sha256": "a0895752f223ca30475cf1833204099f4b2241d7101fca1aed6c5bfa25bc5b0f",
+      "bytes": 21075
     },
     {
       "file": "data/processed/metadata.json",
-      "sha256": "146d3633f9c3fe32109417b6ebcd3213affac6dbdec861bba1a6d161426c3def",
-      "bytes": 2151
+      "sha256": "45c6ac7d5bc590fea1a7beab062585e1b863209b6dcfdee69f81325105b74048",
+      "bytes": 2244
     }
   ],
-  "fingerprint_sha256": "4450bae6324339983a3128a38ae373ba8371fde5224cc5e84877a186caf0f259",
+  "fingerprint_sha256": "83151be3e6a94c6544cdca0ef24ba606e77d140cb41edb282f4495943e4d10ae",
   "policy": {
     "default_training_source": "data/raw",
     "raw_archive_excluded_by_default": true,

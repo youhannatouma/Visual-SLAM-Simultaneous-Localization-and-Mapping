@@ -68,6 +68,12 @@ def parse_args():
         default="models/reasoning_model.pt",
         help="Canonical model path for promotion.",
     )
+    parser.add_argument(
+        "--disk-min-free-gb",
+        type=float,
+        default=1.0,
+        help="Minimum free disk (GB) passed to the guarded pipeline.",
+    )
     return parser.parse_args()
 
 
@@ -83,7 +89,17 @@ def parse_seeds(text):
     return items
 
 
-def run_pipeline(pipeline, python_bin, seed, report_dir, out_dir, model_path, summary_path, baseline_path):
+def run_pipeline(
+    pipeline,
+    python_bin,
+    seed,
+    report_dir,
+    out_dir,
+    model_path,
+    summary_path,
+    baseline_path,
+    disk_min_free_gb,
+):
     report_path = os.path.join(report_dir, "dataset_audit.json")
     manifest_path = os.path.join(report_dir, "manifest", "dataset_manifest.json")
     changelog_path = os.path.join(report_dir, "manifest", "CHANGELOG.md")
@@ -109,6 +125,8 @@ def run_pipeline(pipeline, python_bin, seed, report_dir, out_dir, model_path, su
         manifest_path,
         "--changelog-path",
         changelog_path,
+        "--disk-min-free-gb",
+        str(disk_min_free_gb),
         "--no-promotion-write",
         "--allow-non-promotable",
     ]
@@ -210,6 +228,7 @@ def main():
                 model_path,
                 summary_path,
                 args.baseline,
+                args.disk_min_free_gb,
             )
         except subprocess.CalledProcessError as exc:
             print(f"Seed {seed} failed: {exc}")

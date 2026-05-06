@@ -1,0 +1,11 @@
+{
+  "timestamp": 1778103503,
+  "output_csv": "/Users/guenayfer/SLAM/Visual-SLAM-Simultaneous-Localization-and-Mapping/data/raw_archive/media_labeled_20260502_132959.csv",
+  "review_file": "",
+  "corrections_file": "",
+  "status": "applied",
+  "rows_total": 229,
+  "rows_relabeled": 0,
+  "rows_dropped": 0,
+  "issues": []
+}
