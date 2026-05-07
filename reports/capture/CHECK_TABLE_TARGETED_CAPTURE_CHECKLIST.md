@@ -52,6 +52,10 @@ Apply these during review corrections for both batches:
   - chair occupancy/approach is primary action
   - table objects are incidental
 
+- Disambiguation rule for mixed scenes:
+  - the target is the object centered and approached over the next few frames
+  - if neither table nor chair is clearly targeted, label `EXPLORE`
+
 - Use `drop_row=1` for low-confidence ambiguous frames:
   - strong occlusion of person/table/chair
   - severe motion blur

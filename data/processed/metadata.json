@@ -14,6 +14,8 @@
     "data/raw/media_labeled_stage2_train_refix_20260506.csv",
     "data/raw/move_recovery_pool_20260507.csv",
     "data/raw/session_20260507_002204.csv",
+    "data/raw/session_20260507_162210.csv",
+    "data/raw/session_20260507_163015.csv",
     "data/raw/zz_fresh_real_holdout_20260506.csv"
   ],
   "balance": "oversample",
@@ -24,30 +26,30 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 1489,
-    "rows_after_dropna": 1489,
-    "rows_after_finite_check": 1489,
-    "rows_after_label_filter": 1489,
-    "rows_after_dedup": 1488,
+    "rows_initial": 1498,
+    "rows_after_dropna": 1498,
+    "rows_after_finite_check": 1498,
+    "rows_after_label_filter": 1498,
+    "rows_after_dedup": 1496,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 1,
+    "dropped_duplicates": 2,
     "feature_count": 43
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
       "AVOID_PERSON": 327,
-      "MOVE_TO_CHAIR": 457,
-      "CHECK_TABLE": 321,
+      "MOVE_TO_CHAIR": 460,
+      "CHECK_TABLE": 326,
       "EXPLORE": 383
     }
   },
   "source_quality": {
-    "real_rows": 1488,
+    "real_rows": 1496,
     "synthetic_rows": 0,
-    "total_clean": 1488,
+    "total_clean": 1496,
     "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
@@ -133,9 +135,9 @@
     "f42"
   ],
   "rows": {
-    "train": 1256,
+    "train": 1264,
     "val": 268,
-    "test": 272,
-    "total": 1796
+    "test": 276,
+    "total": 1808
   }
 }

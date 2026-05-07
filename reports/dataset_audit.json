@@ -14,15 +14,17 @@
     "data/raw/media_labeled_stage2_train_refix_20260506.csv",
     "data/raw/move_recovery_pool_20260507.csv",
     "data/raw/session_20260507_002204.csv",
+    "data/raw/session_20260507_162210.csv",
+    "data/raw/session_20260507_163015.csv",
     "data/raw/zz_fresh_real_holdout_20260506.csv"
   ],
   "rows": {
-    "raw": 1489,
-    "clean": 1139,
+    "raw": 1498,
+    "clean": 1147,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_invalid_label": 0,
-    "dropped_duplicates": 350
+    "dropped_duplicates": 351
   },
   "features": {
     "count": 43,
@@ -74,19 +76,19 @@
   },
   "class_distribution": {
     "AVOID_PERSON": 274,
-    "MOVE_TO_CHAIR": 323,
-    "CHECK_TABLE": 258,
+    "MOVE_TO_CHAIR": 326,
+    "CHECK_TABLE": 263,
     "EXPLORE": 284
   },
   "source_type_distribution": {
-    "manual_live": 1,
+    "manual_live": 9,
     "real_media": 1138
   },
   "source_class_distribution": {
     "manual_live": {
       "AVOID_PERSON": 0,
-      "MOVE_TO_CHAIR": 0,
-      "CHECK_TABLE": 1,
+      "MOVE_TO_CHAIR": 3,
+      "CHECK_TABLE": 6,
       "EXPLORE": 0
     },
     "real_media": {
@@ -147,13 +149,13 @@
     }
   },
   "imbalance": {
-    "max_over_min_nonzero": 1.251937984496124,
+    "max_over_min_nonzero": 1.2395437262357414,
     "threshold": 1.3
   },
   "source_quality": {
-    "real_rows": 1139,
+    "real_rows": 1147,
     "synthetic_rows": 0,
-    "total_clean": 1139,
+    "total_clean": 1147,
     "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
