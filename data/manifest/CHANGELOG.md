@@ -568,3 +568,19 @@
 - class distribution: {'AVOID_PERSON': 327, 'MOVE_TO_CHAIR': 457, 'CHECK_TABLE': 322, 'EXPLORE': 383}
 - source distribution: {'real_media': 1487, 'manual_live': 2}
 
+## v20260507_164205
+- timestamp: 1778161325
+- raw files: 16
+- raw rows: 1507
+- fingerprint: 0126b9417cb11398c1777320c72d1d4e8cdbc08a5ad108469c2fded11d3edf44
+- class distribution: {'AVOID_PERSON': 327, 'MOVE_TO_CHAIR': 459, 'CHECK_TABLE': 337, 'EXPLORE': 384}
+- source distribution: {'real_media': 1487, 'manual_live': 20}
+
+## v20260507_165343
+- timestamp: 1778162023
+- raw files: 16
+- raw rows: 1498
+- fingerprint: 27131dded48f9a1867ce2c3d36e9d84d970ff941579794c0b2be66c932f7c121
+- class distribution: {'AVOID_PERSON': 327, 'MOVE_TO_CHAIR': 460, 'CHECK_TABLE': 328, 'EXPLORE': 383}
+- source distribution: {'real_media': 1487, 'manual_live': 11}
+
