@@ -163,3 +163,110 @@ Primary blocker is now concentrated in two areas:
 - Keep reasoning model training as **MLP only**.
 - Keep strict audit/preprocess/pipeline/promotion gates enabled.
 - Keep default training source as real-first raw data (`data/raw`) with archive excluded unless explicitly opted in for experiments.
+
+---
+
+## Update (2026-05-07) - Fresh Real Batches I/J + Holdout/Seed Refresh
+
+Summary of what happened:
+- Added new web-sourced fresh-real media batches `I` and `J` (Pexels video IDs `7591978`, `7593333`, `9065728`, `8632778`, `9655673`, `7224877`, `7643475`).
+- Ran ingest + review exports + correction apply for both batches (`status=applied`).
+- Enforced hard-negative trim from new batches to keep only `40` difficult `AVOID_PERSON` rows total (`10` from I, `30` from J), to avoid class-skew gate failure while preserving non-chair confusers.
+- Ran short seed sweep (`17/42/123`, `16` epochs) with fixed comparable holdout policy (`holdout_per_class=8`, `min_total=32`, `min_sources=2`).
+- Ran expanded holdout sweep with `min_total=48` by increasing `holdout_per_class` to `12` (required by current holdout builder; `8` caps holdout at `32`).
+- Ran one reduced-oversampling experiment (`balance=cap`, seed `42`) as overfit control.
+
+Key outcomes:
+- Comparable sweep (`8/32/2`) executed successfully: `reports/seed_sweep_freshIJ_h32_20260507_140750/seed_sweep_summary.json`.
+- Expanded holdout sweep (`12/48/2`) executed successfully: `reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_sweep_summary.json`.
+- Cap experiment executed: `reports/exp_cap_freshIJ_h32_seed42/metrics.json`.
+- Fresh-real per-class deltas consolidated in `reports/fresh_real_deltas_20260507.md`.
+
+Promotion status:
+- No run cleared promotion thresholds against `reports/metrics_promoted_baseline.json`.
+- Continue data-refresh cycles; avoid architecture churn.
+
+---
+
+## Update (2026-05-07) - Data Refresh Cycle K (MOVE_TO_CHAIR Focus)
+
+Actions completed:
+- Added fresh real batch `K` from new web clips: `pexels_6626481`, `5716999`, `2108287`, `9365378`.
+- Ran review/correction cycle and ensured review status `applied` for batch K.
+- Rebalanced batch K to avoid `AVOID_PERSON` drift and keep MOVE_TO_CHAIR focus (`50 MOVE_TO_CHAIR`, `6 AVOID_PERSON`, `4 EXPLORE`).
+- Added reviewed hard negatives from fresh batches (`data/raw/media_labeled_stage2_move_hardneg_KJ_20260507.csv`, 30 rows, all `EXPLORE`).
+- Re-ran short seed sweep with fixed comparable holdout (`holdout_per_class=8`, `min_total=32`, `min_sources=2`) and seeds `17/42/123` for 16 epochs.
+
+Artifacts:
+- Sweep summary: `reports/seed_sweep_cycleK_h32_20260507_142436/seed_sweep_summary.json`
+- Per-class fresh-real deltas: `reports/fresh_real_deltas_cycleK_20260507.md`
+
+Result:
+- Pipeline ranking marks seed `17` promotable by global gate, but per-class fresh-real deltas show mixed regression (`MOVE_TO_CHAIR` delta negative for seed 17).
+- By explicit stop rule (do not accept runs where one class improves while another regresses), this cycle is treated as **non-promotable**.
+- Continue data-refresh-only loop; no architecture churn.
+
+---
+
+## Update (2026-05-07) - Track 1 Orchestrator Added
+
+Implemented:
+- Added `scripts/run_track1_reasoning_loop.py` as the canonical Track 1 orchestrator.
+- Orchestrator runs short seed sweeps (`17/42/123`, epochs `12..20`) with:
+  - comparable profile fixed to holdout `8/32/2`
+  - periodic noise-check profile `12/48/2` every `3` cycles
+- Promotion stop condition now enforced at loop level as all-gates-required:
+  - test non-regression
+  - key-class non-regression
+  - fresh-real aggregate thresholds
+  - fresh-real per-class non-regression across all 4 classes
+- Added machine-readable loop report:
+  - `reports/track1/<timestamp>/track1_cycle_summary.json`
+  - includes per-cycle sweep config, best-seed gate results, fresh-real per-class deltas, regressing classes, targeted refresh recommendations, and promotion decision.
+- Architecture freeze is explicit in report constraints (no model/training API churn in loop logic; only data/balancing/hard-negative tuning).
+
+Canonical command:
+
+```bash
+python scripts/run_track1_reasoning_loop.py \
+  --python-bin .venv311/bin/python \
+  --seeds 17,42,123 \
+  --epochs-min 12 \
+  --epochs-max 20 \
+  --comparable-holdout-per-class 8 \
+  --comparable-holdout-min-total 32 \
+  --comparable-holdout-min-sources 2 \
+  --noise-holdout-per-class 12 \
+  --noise-holdout-min-total 48 \
+  --noise-holdout-min-sources 2 \
+  --noise-check-every-cycles 3 \
+  --max-refresh-cycles 12
+```
+
+---
+
+## Update (2026-05-07) - Mapping While Running (SLAM Integration)
+
+Implemented:
+- Added runtime SLAM integration module: `mapping_runtime.py`.
+- Added explicit per-frame runtime contracts:
+  - `PoseSample(x, y, theta, timestamp)`
+  - `ActionSample(action, confidence, source_mode, timestamp)`
+  - `MapEvent(event_type, grid_xy, world_xy, label, confidence, track_id, timestamp)`
+- Wired integration directly into `main.py` inference loop:
+  - ORB motion now updates global pose estimates.
+  - Live occupancy grid performs incremental updates with:
+    - obstacle marking
+    - free-space ray carving
+    - decay smoothing
+  - Trajectory trace is rendered continuously on occupancy map output.
+- Added joint run report output (single artifact for label + map quality):
+  - `label_metrics`
+  - `map_metrics` (`loop_closure_drift`, `map_consistency_score`, `obstacle_precision_recall`)
+  - `pose_stats`, config, timing, warnings/failures
+- Added optional labeled-run annotation input for same-run evaluation.
+
+Validation:
+- `py_compile` passed for `main.py`, `mapping_runtime.py`, and tests.
+- Unit tests added and passing via discovery:
+  - `tests/test_mapping_runtime.py`

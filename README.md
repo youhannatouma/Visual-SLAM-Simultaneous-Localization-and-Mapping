@@ -181,6 +181,48 @@ This project was developed for a **3rd-year AI course**, focusing on:
 * Upgrade reasoning with probabilistic models
 * Integrate with robotics (ROS)
 
+## Live SLAM Mapping + Joint Runtime Report
+
+`main.py` now supports runtime mapping integration with an explicit pose/action/map-event contract and a combined evaluation report.
+
+Run with mapping + report output:
+
+```bash
+python main.py \
+  --video videos/test.mp4 \
+  --map-grid-size 120 \
+  --map-meters-per-cell 0.10 \
+  --map-decay 0.985 \
+  --map-obstacle-increment 0.20 \
+  --map-free-decrement 0.05 \
+  --pose-motion-to-meter-scale 0.0025 \
+  --run-annotations reports/runtime/example_annotations.json \
+  --run-report-out reports/runtime/run_report_test.json
+```
+
+New runtime flags:
+
+- `--no-mapping`
+- `--map-grid-size`
+- `--map-meters-per-cell`
+- `--map-decay`
+- `--map-obstacle-increment`
+- `--map-free-decrement`
+- `--map-camera-fov-deg`
+- `--map-ray-step-cells`
+- `--pose-motion-to-meter-scale`
+- `--run-annotations`
+- `--run-report-out`
+
+Runtime report schema includes:
+
+- `label_metrics`
+- `map_metrics`
+- `pose_stats`
+- `config`
+- `timing`
+- `warnings` / `failures`
+
 ---
 
 ## Training the Reasoning Model
@@ -236,7 +278,7 @@ python scripts/audit_reasoning_data.py --input-glob "data/raw/*.csv" --min-per-c
 5. Prepare processed splits with a quality gate:
 
 ```bash
-python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --min-per-class 50 --min-real-share 0.6 --max-synthetic-share 0.4 --holdout-latest-real-source --seed 42
+python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --min-per-class 50 --min-real-share 0.6 --max-synthetic-share 0.4 --holdout-latest-real-source --holdout-per-class 8 --holdout-min-total 32 --holdout-min-sources 2 --seed 42
 ```
 
 If any class is below `--min-per-class`, preprocessing fails and tells you which labels need more data.
@@ -292,7 +334,7 @@ The audit includes relabel/drop/unchanged counts, override summary, QA sample ev
 ### Training algorithm policy
 
 `train_reasoning.py` is locked to **MLP** (`--algorithm mlp` only).  
-This project always trains reasoning with a multilayer perceptron.
+`reasoning.py` runtime inference is also locked to the same MLP architecture.
 
 ## Real-Only Governance & Operations
 
@@ -329,6 +371,9 @@ python scripts/prepare_reasoning_data.py \
   --out-dir data/processed \
   --enforce-review-applied \
   --holdout-latest-real-source \
+  --holdout-per-class 8 \
+  --holdout-min-total 32 \
+  --holdout-min-sources 2 \
   --require-two-real-batches-for-holdout
 ```
 
@@ -400,6 +445,51 @@ scripts/run_reasoning_training_pipeline.sh \
   --fresh-real-min-improve-acc 0.10 \
   --fresh-real-min-improve-macro-f1 0.10
 ```
+
+### Track 1 reasoning loop (strong labels)
+
+Canonical Track 1 command:
+
+```bash
+python scripts/run_track1_reasoning_loop.py \
+  --python-bin .venv311/bin/python \
+  --seeds 17,42,123 \
+  --epochs-min 12 \
+  --epochs-max 20 \
+  --comparable-holdout-per-class 8 \
+  --comparable-holdout-min-total 32 \
+  --comparable-holdout-min-sources 2 \
+  --noise-holdout-per-class 12 \
+  --noise-holdout-min-total 48 \
+  --noise-holdout-min-sources 2 \
+  --noise-check-every-cycles 3 \
+  --max-refresh-cycles 12
+```
+
+Behavior summary:
+
+- Comparable cycles run with fixed holdout `8/32/2`.
+- Periodic noise-check cycles run every `3` cycles with holdout `12/48/2`.
+- Promotion requires all gates together:
+  - test non-regression
+  - key-class non-regression
+  - fresh-real aggregate thresholds
+  - fresh-real per-class non-regression (all 4 classes)
+- Architecture is frozen in loop logic; only data composition, balancing, and hard-negative tuning are allowed.
+
+Track 1 report output:
+
+- `reports/track1/<timestamp>/track1_cycle_summary.json`
+
+Field guide:
+
+- `status`: final loop outcome (`promotable` or `max_cycles_reached_without_promotion`).
+- `config`: exact sweep/holdout/cadence settings used.
+- `cycles[*].profile`: `comparable` or `noise_check`.
+- `cycles[*].evaluation.promotion`: gate pass/fail details for the best seed in that cycle.
+- `cycles[*].evaluation.fresh_real_per_class`: per-class fresh-real `old_f1`, `new_f1`, `delta_f1`, and pass flag.
+- `cycles[*].evaluation.regressing_classes`: classes with negative (or missing) fresh-real deltas.
+- `cycles[*].evaluation.targeted_refresh_recommendations`: refresh guidance constrained to regressing classes.
 
 ### Real cycle runner (batch C / batch D workflow)
 
