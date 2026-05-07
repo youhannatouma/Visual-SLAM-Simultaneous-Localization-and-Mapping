@@ -1,0 +1,71 @@
+{
+  "baseline": "reports/metrics_promoted_baseline.json",
+  "runs": {
+    "17": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_17/metrics.json",
+    "42": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_42/metrics.json",
+    "123": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_123/metrics.json"
+  },
+  "best": {
+    "seed": 17,
+    "move_to_chair_f1": 0.6194690265486725,
+    "macro_f1": 0.6870442299906121,
+    "metrics": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_17/metrics.json",
+    "promotable": false,
+    "failure_reasons": [
+      "Fresh-real improvement gate not met (delta accuracy=0.0423634336677815, delta macro_f1=0.15003561253561254)."
+    ],
+    "recommended_actions": [
+      "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+    ]
+  },
+  "ranked_runs": [
+    {
+      "seed": 17,
+      "promotable": false,
+      "non_regressing": false,
+      "move_to_chair_f1": 0.6194690265486725,
+      "macro_f1": 0.6870442299906121,
+      "metrics": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_17/metrics.json",
+      "failure_reasons": [
+        "Fresh-real improvement gate not met (delta accuracy=0.0423634336677815, delta macro_f1=0.15003561253561254)."
+      ],
+      "recommended_actions": [
+        "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+      ]
+    },
+    {
+      "seed": 42,
+      "promotable": false,
+      "non_regressing": false,
+      "move_to_chair_f1": 0.5901639344262296,
+      "macro_f1": 0.67213124357954,
+      "metrics": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_42/metrics.json",
+      "failure_reasons": [
+        "Key class F1 regression detected.",
+        "Fresh-real improvement gate not met (delta accuracy=0.06800445930880716, delta macro_f1=0.17649270066318118)."
+      ],
+      "recommended_actions": [
+        "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
+        "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+      ]
+    },
+    {
+      "seed": 123,
+      "promotable": false,
+      "non_regressing": false,
+      "move_to_chair_f1": 0.576923076923077,
+      "macro_f1": 0.6191492058262824,
+      "metrics": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_123/metrics.json",
+      "failure_reasons": [
+        "Test accuracy regressed (0.6320346320346321 -> 0.6147186147186147).",
+        "Key class F1 regression detected.",
+        "Fresh-real improvement gate not met (delta accuracy=0.01672240802675584, delta macro_f1=0.16613247863247865)."
+      ],
+      "recommended_actions": [
+        "Collect more diverse real samples and rebalance weak classes before retraining.",
+        "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
+        "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+      ]
+    }
+  ]
+}

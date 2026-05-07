@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-from reasoning import ACTION_CLASSES, FEATURE_SIZE, ReasoningGRU as ReasoningModel, SEQUENCE_LENGTH
+from reasoning import ACTION_CLASSES, FEATURE_SIZE, ReasoningMLP as ReasoningModel, SEQUENCE_LENGTH
 
 
 HUGE_DATASET_THRESHOLD = 50000
@@ -207,8 +207,8 @@ def train(
     algorithm,
     seed,
 ):
-    if algorithm.lower() != "gru":
-        raise ValueError("Only GRU is supported for reasoning training in this project")
+    if algorithm.lower() != "mlp":
+        raise ValueError("Only MLP is supported for reasoning training in this project")
 
     set_seed(seed)
 
@@ -306,7 +306,7 @@ def train(
     save_confusion_matrix(confusion, cm_path)
 
     metrics = {
-        "model_algorithm": "gru",
+        "model_algorithm": "mlp",
         "sequence_length": SEQUENCE_LENGTH,
         "feature_size": train_dataset.feature_size,
         "feature_columns": train_dataset.feature_cols,
@@ -363,7 +363,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--fresh-real-eval", default="", help="Optional held-out fresh real eval CSV")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
-    parser.add_argument("--algorithm", default="gru", choices=["gru"], help="Training algorithm (locked to GRU)")
+    parser.add_argument("--algorithm", default="mlp", choices=["mlp"], help="Training algorithm (locked to MLP)")
     return parser.parse_args()
 
 

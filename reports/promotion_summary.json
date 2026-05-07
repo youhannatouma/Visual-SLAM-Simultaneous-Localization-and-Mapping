@@ -5,52 +5,85 @@
   "current_metrics_path": "reports/metrics.json",
   "gate_results": {
     "test_accuracy_non_regression": {
-      "passed": true,
-      "old": 0.65,
-      "new": 0.7062937062937062,
+      "passed": false,
+      "old": 0.6320346320346321,
+      "new": 0.5171102661596958,
       "tolerance": 0.005
     },
     "key_class_f1_non_regression": {
       "passed": false,
       "classes": {
         "CHECK_TABLE": {
-          "passed": true,
-          "old_f1": 0.25,
-          "new_f1": 0.6666666666666667
+          "passed": false,
+          "old_f1": 0.5714285714285714,
+          "new_f1": 0.39062500000000006
         },
         "MOVE_TO_CHAIR": {
           "passed": false,
-          "old_f1": 0.9090909090909091,
-          "new_f1": 0.611111111111111
+          "old_f1": 0.49557522123893805,
+          "new_f1": 0.48322147651006714
         }
       }
     },
     "fresh_real_improvement": {
       "passed": false,
       "old": {
-        "accuracy": 0.7738095238095238,
-        "macro_f1": 0.7378790263387703
+        "accuracy": 0.5217391304347826,
+        "macro_f1": 0.3894230769230769
       },
       "new": {
-        "accuracy": 0.7692307692307693,
-        "macro_f1": 0.746031746031746
+        "accuracy": 0.5652173913043478,
+        "macro_f1": 0.4145299145299145
       },
       "delta": {
-        "accuracy": -0.0045787545787545625,
-        "macro_f1": 0.008152719692975707
+        "accuracy": 0.04347826086956519,
+        "macro_f1": 0.025106837606837573
       },
       "required_delta": {
         "accuracy": 0.1,
         "macro_f1": 0.1
       }
+    },
+    "fresh_real_per_class_non_regression": {
+      "passed": false,
+      "classes": {
+        "AVOID_PERSON": {
+          "passed": true,
+          "old_f1": 0.0,
+          "new_f1": 0.0,
+          "delta_f1": 0.0
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": false,
+          "old_f1": 0.75,
+          "new_f1": 0.4615384615384615,
+          "delta_f1": -0.2884615384615385
+        },
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.3076923076923077,
+          "new_f1": 0.3076923076923077,
+          "delta_f1": 0.0
+        },
+        "EXPLORE": {
+          "passed": true,
+          "old_f1": 0.5,
+          "new_f1": 0.888888888888889,
+          "delta_f1": 0.38888888888888895
+        }
+      }
     }
   },
   "failure_reasons": [
+    "Test accuracy regressed (0.6320346320346321 -> 0.5171102661596958).",
     "Key class F1 regression detected.",
-    "Fresh-real improvement gate not met (delta accuracy=-0.0045787545787545625, delta macro_f1=0.008152719692975707)."
+    "Fresh-real improvement gate not met (delta accuracy=0.04347826086956519, delta macro_f1=0.025106837606837573).",
+    "Fresh-real per-class regression detected (mixed-sign deltas)."
   ],
   "recommended_actions": [
+    "Collect more diverse real samples and rebalance weak classes before retraining.",
     "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
-    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.",
+    "Continue data-refresh cycles and target regressing fresh-real classes before promotion."
   ]
 }

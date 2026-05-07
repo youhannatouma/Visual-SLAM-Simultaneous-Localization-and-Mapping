@@ -29,6 +29,9 @@ FRESH_REAL_MIN_IMPROVE_MACRO_F1=0.10
 ESTABLISH_PROMOTION_BASELINE=0
 PROMOTION_WRITE_BASELINE=1
 PROMOTION_STRICT=1
+HOLDOUT_PER_CLASS=8
+HOLDOUT_MIN_TOTAL=32
+HOLDOUT_MIN_SOURCES=2
 
 usage() {
   cat <<USAGE
@@ -63,6 +66,9 @@ Options:
   --fresh-real-min-improve-acc <x> Minimum required fresh-real accuracy improvement vs promoted baseline (default: 0.10).
   --fresh-real-min-improve-macro-f1 <x> Minimum required fresh-real macro F1 improvement vs promoted baseline (default: 0.10).
   --establish-promotion-baseline If baseline is missing, save current metrics as baseline and mark run non-promotable.
+  --holdout-per-class <n>        Holdout rows per class (default: 8).
+  --holdout-min-total <n>        Minimum total holdout rows (default: 32).
+  --holdout-min-sources <n>      Minimum distinct holdout sources (default: 2).
   -h, --help                     Show this help.
 USAGE
 }
@@ -181,6 +187,18 @@ while [[ $# -gt 0 ]]; do
       ESTABLISH_PROMOTION_BASELINE=1
       shift
       ;;
+    --holdout-per-class)
+      HOLDOUT_PER_CLASS="$2"
+      shift 2
+      ;;
+    --holdout-min-total)
+      HOLDOUT_MIN_TOTAL="$2"
+      shift 2
+      ;;
+    --holdout-min-sources)
+      HOLDOUT_MIN_SOURCES="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -259,6 +277,9 @@ echo "[3/4] Running preprocessing..."
   --enforce-review-applied \
   --require-two-real-batches-for-holdout \
   --holdout-latest-real-source \
+  --holdout-per-class "$HOLDOUT_PER_CLASS" \
+  --holdout-min-total "$HOLDOUT_MIN_TOTAL" \
+  --holdout-min-sources "$HOLDOUT_MIN_SOURCES" \
   --seed "$SEED"
 
 echo "[3.5/4] Writing dataset manifest snapshot..."
@@ -394,6 +415,32 @@ else:
             f"(delta accuracy={acc_delta}, delta macro_f1={f1_delta})."
         )
         recommended_actions.append("Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.")
+
+    # Stop-rule gate: disallow promotion when fresh-real improves in aggregate
+    # but one or more classes regress (mixed-sign class deltas).
+    class_labels = ("AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE")
+    class_gate_rows = {}
+    class_regression = False
+    for label in class_labels:
+        old_cls = get_float(old, "fresh_real_eval", "per_class", label, "f1")
+        new_cls = get_float(new, "fresh_real_eval", "per_class", label, "f1")
+        ok = old_cls is not None and new_cls is not None and (new_cls + 1e-12 >= old_cls)
+        class_gate_rows[label] = {
+            "passed": bool(ok),
+            "old_f1": old_cls,
+            "new_f1": new_cls,
+            "delta_f1": None if old_cls is None or new_cls is None else (new_cls - old_cls),
+        }
+        if not ok:
+            class_regression = True
+    gate_results["fresh_real_per_class_non_regression"] = {
+        "passed": not class_regression,
+        "classes": class_gate_rows,
+    }
+    if class_regression:
+        promotable = False
+        failure_reasons.append("Fresh-real per-class regression detected (mixed-sign deltas).")
+        recommended_actions.append("Continue data-refresh cycles and target regressing fresh-real classes before promotion.")
 
     if promotable:
       if write_baseline:

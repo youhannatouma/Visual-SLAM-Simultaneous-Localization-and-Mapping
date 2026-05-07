@@ -42,7 +42,25 @@ def parse_args():
     parser.add_argument(
         "--holdout-latest-real-source",
         action="store_true",
-        help="Hold out the latest real source file into data/processed/fresh_real_eval.csv",
+        help="Deprecated compatibility flag. Enables deterministic multi-source holdout.",
+    )
+    parser.add_argument(
+        "--holdout-per-class",
+        type=int,
+        default=8,
+        help="Target rows per class for fresh real holdout assembly.",
+    )
+    parser.add_argument(
+        "--holdout-min-total",
+        type=int,
+        default=32,
+        help="Minimum required total rows for fresh real holdout.",
+    )
+    parser.add_argument(
+        "--holdout-min-sources",
+        type=int,
+        default=2,
+        help="Minimum required independent real sources represented in holdout.",
     )
     parser.add_argument(
         "--enforce-review-applied",
@@ -124,8 +142,14 @@ def validate_and_clean(df):
         )
     ]
 
+    provenance_cols = [
+        c
+        for c in ["__source_file", "source_file", "frame_index", "batch_id", "scenario"]
+        if c in working.columns
+    ]
+    dedup_cols = required_cols + provenance_cols
     before_dedup = len(working)
-    working = working.drop_duplicates(subset=required_cols, keep="first")
+    working = working.drop_duplicates(subset=dedup_cols, keep="first")
     rows_after_dedup = len(working)
 
     if working.empty:
@@ -298,22 +322,139 @@ def save_outputs(train_df, val_df, test_df, out_dir):
     return train_path, val_path, test_path
 
 
-def holdout_latest_real_source(df, out_dir):
+def _real_unit_columns(df):
+    batch_col = "batch_id" if "batch_id" in df.columns else None
+    source_col = "__source_file" if "__source_file" in df.columns else None
+    return batch_col, source_col
+
+
+def holdout_multisource_balanced(df, out_dir, holdout_per_class, holdout_min_total, holdout_min_sources):
     real_mask = df["source_type"].isin(REAL_SOURCE_TYPES)
     real_df = df.loc[real_mask].copy()
     if real_df.empty:
-        raise ValueError("Cannot hold out latest real source: no real rows found")
+        raise ValueError("Cannot build fresh real holdout: no real rows found")
 
-    # Pick latest source by filename lexical order (timestamped filenames).
-    latest_source = sorted(real_df["__source_file"].unique())[-1]
-    holdout_df = real_df.loc[real_df["__source_file"] == latest_source].copy()
-    remaining_df = df.loc[df["__source_file"] != latest_source].copy()
+    batch_col, source_col = _real_unit_columns(real_df)
+    if source_col is None:
+        raise ValueError("Cannot build fresh real holdout: source metadata missing")
+
+    working = real_df.copy()
+    if batch_col is not None:
+        working["__holdout_unit"] = working[batch_col].fillna("").astype(str).str.strip()
+        working.loc[working["__holdout_unit"].eq(""), "__holdout_unit"] = working[source_col].astype(str)
+    else:
+        working["__holdout_unit"] = working[source_col].astype(str)
+
+    unit_counts = working["__holdout_unit"].value_counts()
+    if len(unit_counts) < holdout_min_sources:
+        raise ValueError(
+            "Holdout gate failed: requires at least "
+            f"{holdout_min_sources} independent real batches/sources; found {len(unit_counts)}"
+        )
+
+    # Deterministic order: larger units first, then lexical key.
+    ordered_units = sorted(unit_counts.index.tolist(), key=lambda u: (-int(unit_counts[u]), str(u)))
+
+    hold_parts = []
+    used_idx = set()
+    for label_idx, label in enumerate(ACTION_CLASSES):
+        target = int(max(1, holdout_per_class))
+        class_rows = working[working["label"] == label].copy()
+        if class_rows.empty:
+            continue
+        picked = []
+        rotated_units = ordered_units[label_idx % len(ordered_units):] + ordered_units[:label_idx % len(ordered_units)]
+        unit_cursor = 0
+        while len(picked) < target and unit_cursor < (len(rotated_units) * 4):
+            unit = rotated_units[unit_cursor % len(rotated_units)]
+            unit_rows = class_rows[class_rows["__holdout_unit"] == unit]
+            added = False
+            for idx, row in unit_rows.iterrows():
+                if idx in used_idx:
+                    continue
+                picked.append(idx)
+                used_idx.add(idx)
+                added = True
+                break
+            if not added and len(picked) >= len(class_rows):
+                break
+            unit_cursor += 1
+            if not added and unit_cursor >= len(rotated_units):
+                # fallback: grab any remaining row for this class
+                for idx, row in class_rows.iterrows():
+                    if idx in used_idx:
+                        continue
+                    picked.append(idx)
+                    used_idx.add(idx)
+                    break
+        if picked:
+            hold_parts.append(working.loc[picked].copy())
+
+    if not hold_parts:
+        raise ValueError("Holdout gate failed: no rows selected for holdout")
+
+    holdout_df = pd.concat(hold_parts, ignore_index=True)
+    holdout_df = holdout_df.drop(columns=["__holdout_unit"], errors="ignore")
+    remaining_df = df.drop(index=list(used_idx), errors="ignore").copy()
     if holdout_df.empty or remaining_df.empty:
         raise ValueError("Invalid holdout split: holdout or remaining set is empty")
+    if len(holdout_df) < int(holdout_min_total):
+        raise ValueError(
+            "Holdout gate failed: holdout too small. "
+            f"Need >= {holdout_min_total} rows, got {len(holdout_df)}"
+        )
+
+    holdout_label_counts = holdout_df["label"].value_counts().reindex(ACTION_CLASSES, fill_value=0)
+    zero_labels = [label for label, n in holdout_label_counts.items() if int(n) == 0]
+    if zero_labels:
+        raise ValueError(
+            "Holdout gate failed: missing class coverage in holdout. "
+            f"Missing: {', '.join(zero_labels)}"
+        )
+
+    holdout_sources = (
+        holdout_df[batch_col].fillna("").astype(str).str.strip()
+        if batch_col is not None
+        else pd.Series([], dtype=str)
+    )
+    if batch_col is not None:
+        holdout_sources = holdout_sources[holdout_sources.ne("")]
+    if batch_col is None or holdout_sources.empty:
+        holdout_sources = holdout_df[source_col].astype(str)
+    source_set = set(holdout_sources.tolist())
+    if len(source_set) < holdout_min_sources:
+        missing_units = [u for u in ordered_units if u not in source_set]
+        for unit in missing_units:
+            unit_candidates = working[working["__holdout_unit"] == unit]
+            if unit_candidates.empty:
+                continue
+            for idx, row in unit_candidates.iterrows():
+                if idx in used_idx:
+                    continue
+                holdout_df = pd.concat([holdout_df, row.to_frame().T], ignore_index=True)
+                used_idx.add(idx)
+                source_set.add(unit)
+                break
+            if len(source_set) >= holdout_min_sources:
+                break
+
+    if len(source_set) < holdout_min_sources:
+        raise ValueError(
+            "Holdout gate failed: holdout lacks source diversity. "
+            f"Need >= {holdout_min_sources} sources in holdout."
+        )
 
     holdout_path = os.path.join(out_dir, "fresh_real_eval.csv")
     holdout_df.to_csv(holdout_path, index=False)
-    return remaining_df, holdout_path, latest_source, int(len(holdout_df))
+    qa = {
+        "rows": int(len(holdout_df)),
+        "per_class": {label: int(holdout_label_counts[label]) for label in ACTION_CLASSES},
+        "per_source": {str(k): int(v) for k, v in pd.Series(holdout_sources).value_counts().to_dict().items()},
+        "dropped_from_train_due_to_holdout": int(len(used_idx)),
+        "min_required_total": int(holdout_min_total),
+        "min_required_sources": int(holdout_min_sources),
+    }
+    return remaining_df, holdout_path, qa
 
 
 def enforce_review_status(input_files):
@@ -355,27 +496,25 @@ def main():
     print_distribution(clean_df, "Class distribution before balancing")
 
     holdout_path = ""
-    holdout_source = ""
+    holdout_qa = {}
     holdout_rows = 0
     split_input_df = clean_df
     if args.holdout_latest_real_source:
+        min_sources = args.holdout_min_sources
         if args.require_two_real_batches_for_holdout:
-            real_df = clean_df[clean_df["source_type"].isin(REAL_SOURCE_TYPES)]
-            batch_col = "batch_id" if "batch_id" in real_df.columns else None
-            independent_units = set()
-            if batch_col is not None:
-                independent_units = {
-                    str(x).strip() for x in real_df[batch_col].dropna().astype(str).tolist() if str(x).strip()
-                }
-            if len(independent_units) < 2:
-                independent_units = set(real_df["__source_file"].astype(str).tolist())
-            if len(independent_units) < 2:
-                raise ValueError(
-                    "Holdout gate failed: requires at least 2 independent real batches/sources. "
-                    f"Found {len(independent_units)}"
-                )
-        split_input_df, holdout_path, holdout_source, holdout_rows = holdout_latest_real_source(clean_df, args.out_dir)
-        print(f"Held out latest real source: {holdout_source} ({holdout_rows} rows)")
+            min_sources = max(min_sources, 2)
+        split_input_df, holdout_path, holdout_qa = holdout_multisource_balanced(
+            clean_df,
+            args.out_dir,
+            args.holdout_per_class,
+            args.holdout_min_total,
+            min_sources,
+        )
+        holdout_rows = int(holdout_qa.get("rows", 0))
+        print(
+            "Held out deterministic multi-source fresh eval "
+            f"({holdout_rows} rows; sources={len(holdout_qa.get('per_source', {}))})"
+        )
         print(f"Saved fresh real eval set: {holdout_path}")
 
     balanced_df = balance_classes(split_input_df, args.balance, args.seed)
@@ -409,10 +548,13 @@ def main():
         "source_quality": source_quality,
         "holdout_latest_real_source": {
             "enabled": bool(args.holdout_latest_real_source),
-            "source_file": holdout_source,
             "rows": int(holdout_rows),
             "path": holdout_path,
             "require_two_real_batches_for_holdout": bool(args.require_two_real_batches_for_holdout),
+            "holdout_per_class": int(args.holdout_per_class),
+            "holdout_min_total": int(args.holdout_min_total),
+            "holdout_min_sources": int(min_sources if args.holdout_latest_real_source else args.holdout_min_sources),
+            "qa": holdout_qa,
         },
         "feature_columns": feature_cols,
         "rows": {

@@ -52,7 +52,18 @@ def parse_args():
     parser.add_argument(
         "--target-label",
         default="MOVE_TO_CHAIR",
-        help="Target label to keep in the recovery pool.",
+        help="Target label to prioritize in the recovery pool.",
+    )
+    parser.add_argument(
+        "--contrast-labels",
+        default="CHECK_TABLE,EXPLORE,AVOID_PERSON",
+        help="Comma-separated non-target labels to include as hard negatives.",
+    )
+    parser.add_argument(
+        "--contrast-ratio",
+        type=float,
+        default=0.25,
+        help="Max hard-negative rows as a fraction of target rows.",
     )
     parser.add_argument(
         "--needs-review-only",
@@ -250,7 +261,13 @@ def write_review_status(status_dir, out_csv, total_rows):
 
 def signature_row(row):
     values = tuple(round(float(row[c]), 6) for c in FEATURE_COLS)
-    return values + (str(row["label"]),)
+    provenance = (
+        str(row.get("__source_csv", "")).strip(),
+        str(row.get("source_file", "")).strip(),
+        str(row.get("batch_id", "")).strip(),
+        int(row.get("frame_index", -1)) if pd.notna(row.get("frame_index", -1)) else -1,
+    )
+    return values + (str(row["label"]),) + provenance
 
 
 def collect_existing_signatures(existing_glob, ignore_paths=None):
@@ -339,12 +356,30 @@ def main():
         raise ValueError(f"Unsupported target label: {target_label}")
 
     merged["label"] = normalize_label(merged["label"])
-    merged = merged[merged["label"] == target_label].copy()
+    if "auto_label" not in merged.columns:
+        merged["auto_label"] = merged["label"]
+    else:
+        merged["auto_label"] = normalize_label(merged["auto_label"])
+    if "needs_review" not in merged.columns:
+        merged["needs_review"] = 0
+    needs_review = pd.to_numeric(merged["needs_review"], errors="coerce").fillna(0).astype(int)
+
+    target_df = merged[merged["label"] == target_label].copy()
     if args.needs_review_only:
-        if "needs_review" not in merged.columns:
-            merged["needs_review"] = 0
-        needs_review = pd.to_numeric(merged["needs_review"], errors="coerce").fillna(0).astype(int)
-        merged = merged.loc[needs_review.eq(1)].copy()
+        target_df = target_df.loc[needs_review.loc[target_df.index].eq(1)].copy()
+
+    contrast_labels = [
+        x.strip().upper()
+        for x in str(args.contrast_labels).split(",")
+        if x.strip()
+    ]
+    contrast_labels = [x for x in contrast_labels if x in ACTION_CLASSES and x != target_label]
+    contrast_pool = merged[merged["label"].isin(contrast_labels)].copy()
+    if not contrast_pool.empty:
+        contrast_pool = contrast_pool.loc[
+            (needs_review.loc[contrast_pool.index].eq(1))
+            | (contrast_pool["auto_label"] == target_label)
+        ].copy()
 
     out_csv = args.out_csv or f"data/raw/move_recovery_pool_{time.strftime('%Y%m%d')}.csv"
     existing_signatures = collect_existing_signatures(
@@ -352,17 +387,31 @@ def main():
         ignore_paths=[out_csv],
     )
     if existing_signatures:
-        before_existing = len(merged)
-        merged = drop_existing_rows(merged, existing_signatures)
-        print("Dropped existing raw duplicates:", before_existing - len(merged))
+        before_existing_target = len(target_df)
+        before_existing_contrast = len(contrast_pool)
+        target_df = drop_existing_rows(target_df, existing_signatures)
+        contrast_pool = drop_existing_rows(contrast_pool, existing_signatures)
+        print(
+            "Dropped existing raw duplicates:",
+            (before_existing_target - len(target_df)) + (before_existing_contrast - len(contrast_pool)),
+        )
 
-    merged = apply_curation_filter(merged, args.curation_csv)
+    target_df = apply_curation_filter(target_df, args.curation_csv)
+    contrast_pool = apply_curation_filter(contrast_pool, args.curation_csv)
 
     if args.export_candidates:
-        export_candidates(merged, args.export_candidates)
+        export_candidates(pd.concat([target_df, contrast_pool], ignore_index=True), args.export_candidates)
 
-    if merged.empty:
+    if target_df.empty:
         raise ValueError("No rows remain after filtering. Check review coverage and curation.")
+
+    contrast_limit = int(max(0, round(len(target_df) * float(args.contrast_ratio))))
+    if contrast_limit > 0 and len(contrast_pool) > contrast_limit:
+        rng = np.random.default_rng(args.seed + 11)
+        idx = rng.choice(np.arange(len(contrast_pool)), size=contrast_limit, replace=False)
+        contrast_pool = contrast_pool.iloc[idx].copy()
+
+    merged = pd.concat([target_df, contrast_pool], ignore_index=True)
 
     rng = np.random.default_rng(args.seed)
     if args.limit > 0 and len(merged) > args.limit:
@@ -374,10 +423,7 @@ def main():
     else:
         merged["source_type"] = merged["source_type"].fillna("real_media")
 
-    if "auto_label" not in merged.columns:
-        merged["auto_label"] = merged["label"]
-    else:
-        merged["auto_label"] = merged["auto_label"].fillna(merged["label"])
+    merged["auto_label"] = merged["auto_label"].fillna(merged["label"])
 
     if "needs_review" not in merged.columns:
         merged["needs_review"] = 0
@@ -401,7 +447,9 @@ def main():
     print("Reviewed sources:", len(sources))
     print("Rows before validity:", before_validity)
     print("Rows after validity:", after_validity)
-    print("Rows after label filter:", len(merged))
+    print("Rows target label:", len(target_df))
+    print("Rows hard negatives:", len(contrast_pool))
+    print("Rows final:", len(merged))
     print("Output:", out_csv, len(merged))
 
 

@@ -528,3 +528,43 @@
 - class distribution: {'AVOID_PERSON': 258, 'MOVE_TO_CHAIR': 331, 'CHECK_TABLE': 320, 'EXPLORE': 258}
 - source distribution: {'real_media': 1165, 'manual_live': 2}
 
+## v20260507_134556
+- timestamp: 1778150756
+- raw files: 10
+- raw rows: 1267
+- fingerprint: 795727976d3d0ba18a73404eab093f88257c05533d850608baa6a6a29ea6a0b4
+- class distribution: {'AVOID_PERSON': 281, 'MOVE_TO_CHAIR': 404, 'CHECK_TABLE': 322, 'EXPLORE': 260}
+- source distribution: {'real_media': 1265, 'manual_live': 2}
+
+## v20260507_134640
+- timestamp: 1778150800
+- raw files: 10
+- raw rows: 1267
+- fingerprint: 795727976d3d0ba18a73404eab093f88257c05533d850608baa6a6a29ea6a0b4
+- class distribution: {'AVOID_PERSON': 281, 'MOVE_TO_CHAIR': 404, 'CHECK_TABLE': 322, 'EXPLORE': 260}
+- source distribution: {'real_media': 1265, 'manual_live': 2}
+
+## v20260507_134821
+- timestamp: 1778150901
+- raw files: 10
+- raw rows: 1267
+- fingerprint: 795727976d3d0ba18a73404eab093f88257c05533d850608baa6a6a29ea6a0b4
+- class distribution: {'AVOID_PERSON': 281, 'MOVE_TO_CHAIR': 404, 'CHECK_TABLE': 322, 'EXPLORE': 260}
+- source distribution: {'real_media': 1265, 'manual_live': 2}
+
+## v20260507_142752
+- timestamp: 1778153272
+- raw files: 14
+- raw rows: 1489
+- fingerprint: 7b018b3d063c6b6a6333354d8cb95ba787630fcfb8f5c14f6218c71520975bed
+- class distribution: {'AVOID_PERSON': 327, 'MOVE_TO_CHAIR': 457, 'CHECK_TABLE': 322, 'EXPLORE': 383}
+- source distribution: {'real_media': 1487, 'manual_live': 2}
+
+## v20260507_142925
+- timestamp: 1778153365
+- raw files: 14
+- raw rows: 1489
+- fingerprint: 7b018b3d063c6b6a6333354d8cb95ba787630fcfb8f5c14f6218c71520975bed
+- class distribution: {'AVOID_PERSON': 327, 'MOVE_TO_CHAIR': 457, 'CHECK_TABLE': 322, 'EXPLORE': 383}
+- source distribution: {'real_media': 1487, 'manual_live': 2}
+

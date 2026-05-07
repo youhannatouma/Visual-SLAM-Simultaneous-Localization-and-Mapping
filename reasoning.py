@@ -33,31 +33,30 @@ FEATURE_SIZE = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES)
 #   Normalizes the values between layers. Prevents "exploding" or "vanishing"
 #   gradients that slow down or break training.
 # =============================================================================
-class ReasoningGRU(nn.Module):
-    def __init__(self, input_size, hidden_size=128, num_layers=2):
+class ReasoningMLP(nn.Module):
+    def __init__(self, input_size, sequence_length=SEQUENCE_LENGTH):
         super().__init__()
-
-        self.gru = nn.GRU(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=0.3
-        )
-
+        self.sequence_length = sequence_length
+        flattened_size = input_size * sequence_length
         self.classifier = nn.Sequential(
-            nn.Linear(hidden_size, 64),
+            nn.Linear(flattened_size, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(64, len(ACTION_CLASSES))
         )
 
     def forward(self, x):
-        out, _ = self.gru(x)
-
-        final = out[:, -1]
-
-        return self.classifier(final)
+        if x.dim() == 3:
+            x = x.reshape(x.size(0), -1)
+        return self.classifier(x)
 
 
 class ReasoningEngine:
@@ -109,7 +108,7 @@ class ReasoningEngine:
     def load_model(self):
         if os.path.exists(self.model_path):
             try:
-                self.model = ReasoningGRU(FEATURE_SIZE).to(self.device)
+                self.model = ReasoningMLP(FEATURE_SIZE, sequence_length=self.sequence_length).to(self.device)
                 self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
                 self.model.eval()
                 print(f"[ReasoningEngine] Loaded model from '{self.model_path}'")

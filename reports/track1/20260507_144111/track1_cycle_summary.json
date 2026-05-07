@@ -1,0 +1,325 @@
+{
+  "track": "track_1_reasoning_strong_labels",
+  "timestamp": "20260507_144111",
+  "status": "max_cycles_reached_without_promotion",
+  "promoted_cycle": null,
+  "constraints": {
+    "architecture_frozen": true,
+    "allowed_tuning_knobs": [
+      "data_composition",
+      "balancing_strategy",
+      "hard_negative_ratio",
+      "hard_negative_pool_selection"
+    ],
+    "forbidden_changes": [
+      "model_architecture",
+      "training_api_contract",
+      "feature_schema_churn"
+    ]
+  },
+  "config": {
+    "baseline": "reports/metrics_promoted_baseline.json",
+    "seeds": [
+      17,
+      42,
+      123
+    ],
+    "epochs_min": 12,
+    "epochs_max": 20,
+    "comparable_holdout": {
+      "holdout_per_class": 8,
+      "holdout_min_total": 32,
+      "holdout_min_sources": 2
+    },
+    "noise_holdout": {
+      "holdout_per_class": 12,
+      "holdout_min_total": 48,
+      "holdout_min_sources": 2
+    },
+    "noise_check_every_cycles": 3,
+    "max_refresh_cycles": 4,
+    "dry_run": true
+  },
+  "cycles": [
+    {
+      "cycle_index": 1,
+      "cycle_id": "cycle_01_comparable",
+      "profile": "comparable",
+      "is_noise_check": false,
+      "epochs": 12,
+      "seeds": [
+        17,
+        42,
+        123
+      ],
+      "sweep_command": [
+        ".venv311/bin/python",
+        "scripts/run_reasoning_seed_sweep.py",
+        "--seeds",
+        "17,42,123",
+        "--python-bin",
+        ".venv311/bin/python",
+        "--epochs",
+        "12",
+        "--holdout-per-class",
+        "8",
+        "--holdout-min-total",
+        "32",
+        "--holdout-min-sources",
+        "2",
+        "--baseline",
+        "reports/metrics_promoted_baseline.json",
+        "--out-root",
+        "reports/track1/20260507_144111/cycle_01_comparable",
+        "--processed-root",
+        "data/processed_track1/20260507_144111/cycle_01_comparable",
+        "--model-root",
+        "models/track1/20260507_144111/cycle_01_comparable"
+      ],
+      "sweep_summary_path": "reports/track1/20260507_144111/cycle_01_comparable/seed_sweep_summary.json",
+      "evaluation": {
+        "status": "dry_run_not_executed",
+        "promotion": {
+          "all_gates_pass": false
+        },
+        "fresh_real_per_class": {
+          "AVOID_PERSON": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "MOVE_TO_CHAIR": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "CHECK_TABLE": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "EXPLORE": {
+            "delta_f1": null,
+            "passed": false
+          }
+        },
+        "regressing_classes": [
+          "AVOID_PERSON",
+          "MOVE_TO_CHAIR",
+          "CHECK_TABLE",
+          "EXPLORE"
+        ],
+        "targeted_refresh_recommendations": [
+          "Dry-run mode: execute without --dry-run to evaluate promotion gates and deltas."
+        ]
+      }
+    },
+    {
+      "cycle_index": 2,
+      "cycle_id": "cycle_02_comparable",
+      "profile": "comparable",
+      "is_noise_check": false,
+      "epochs": 13,
+      "seeds": [
+        17,
+        42,
+        123
+      ],
+      "sweep_command": [
+        ".venv311/bin/python",
+        "scripts/run_reasoning_seed_sweep.py",
+        "--seeds",
+        "17,42,123",
+        "--python-bin",
+        ".venv311/bin/python",
+        "--epochs",
+        "13",
+        "--holdout-per-class",
+        "8",
+        "--holdout-min-total",
+        "32",
+        "--holdout-min-sources",
+        "2",
+        "--baseline",
+        "reports/metrics_promoted_baseline.json",
+        "--out-root",
+        "reports/track1/20260507_144111/cycle_02_comparable",
+        "--processed-root",
+        "data/processed_track1/20260507_144111/cycle_02_comparable",
+        "--model-root",
+        "models/track1/20260507_144111/cycle_02_comparable"
+      ],
+      "sweep_summary_path": "reports/track1/20260507_144111/cycle_02_comparable/seed_sweep_summary.json",
+      "evaluation": {
+        "status": "dry_run_not_executed",
+        "promotion": {
+          "all_gates_pass": false
+        },
+        "fresh_real_per_class": {
+          "AVOID_PERSON": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "MOVE_TO_CHAIR": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "CHECK_TABLE": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "EXPLORE": {
+            "delta_f1": null,
+            "passed": false
+          }
+        },
+        "regressing_classes": [
+          "AVOID_PERSON",
+          "MOVE_TO_CHAIR",
+          "CHECK_TABLE",
+          "EXPLORE"
+        ],
+        "targeted_refresh_recommendations": [
+          "Dry-run mode: execute without --dry-run to evaluate promotion gates and deltas."
+        ]
+      }
+    },
+    {
+      "cycle_index": 3,
+      "cycle_id": "cycle_03_noise_check",
+      "profile": "noise_check",
+      "is_noise_check": true,
+      "epochs": 14,
+      "seeds": [
+        17,
+        42,
+        123
+      ],
+      "sweep_command": [
+        ".venv311/bin/python",
+        "scripts/run_reasoning_seed_sweep.py",
+        "--seeds",
+        "17,42,123",
+        "--python-bin",
+        ".venv311/bin/python",
+        "--epochs",
+        "14",
+        "--holdout-per-class",
+        "12",
+        "--holdout-min-total",
+        "48",
+        "--holdout-min-sources",
+        "2",
+        "--baseline",
+        "reports/metrics_promoted_baseline.json",
+        "--out-root",
+        "reports/track1/20260507_144111/cycle_03_noise_check",
+        "--processed-root",
+        "data/processed_track1/20260507_144111/cycle_03_noise_check",
+        "--model-root",
+        "models/track1/20260507_144111/cycle_03_noise_check"
+      ],
+      "sweep_summary_path": "reports/track1/20260507_144111/cycle_03_noise_check/seed_sweep_summary.json",
+      "evaluation": {
+        "status": "dry_run_not_executed",
+        "promotion": {
+          "all_gates_pass": false
+        },
+        "fresh_real_per_class": {
+          "AVOID_PERSON": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "MOVE_TO_CHAIR": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "CHECK_TABLE": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "EXPLORE": {
+            "delta_f1": null,
+            "passed": false
+          }
+        },
+        "regressing_classes": [
+          "AVOID_PERSON",
+          "MOVE_TO_CHAIR",
+          "CHECK_TABLE",
+          "EXPLORE"
+        ],
+        "targeted_refresh_recommendations": [
+          "Dry-run mode: execute without --dry-run to evaluate promotion gates and deltas."
+        ]
+      }
+    },
+    {
+      "cycle_index": 4,
+      "cycle_id": "cycle_04_comparable",
+      "profile": "comparable",
+      "is_noise_check": false,
+      "epochs": 15,
+      "seeds": [
+        17,
+        42,
+        123
+      ],
+      "sweep_command": [
+        ".venv311/bin/python",
+        "scripts/run_reasoning_seed_sweep.py",
+        "--seeds",
+        "17,42,123",
+        "--python-bin",
+        ".venv311/bin/python",
+        "--epochs",
+        "15",
+        "--holdout-per-class",
+        "8",
+        "--holdout-min-total",
+        "32",
+        "--holdout-min-sources",
+        "2",
+        "--baseline",
+        "reports/metrics_promoted_baseline.json",
+        "--out-root",
+        "reports/track1/20260507_144111/cycle_04_comparable",
+        "--processed-root",
+        "data/processed_track1/20260507_144111/cycle_04_comparable",
+        "--model-root",
+        "models/track1/20260507_144111/cycle_04_comparable"
+      ],
+      "sweep_summary_path": "reports/track1/20260507_144111/cycle_04_comparable/seed_sweep_summary.json",
+      "evaluation": {
+        "status": "dry_run_not_executed",
+        "promotion": {
+          "all_gates_pass": false
+        },
+        "fresh_real_per_class": {
+          "AVOID_PERSON": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "MOVE_TO_CHAIR": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "CHECK_TABLE": {
+            "delta_f1": null,
+            "passed": false
+          },
+          "EXPLORE": {
+            "delta_f1": null,
+            "passed": false
+          }
+        },
+        "regressing_classes": [
+          "AVOID_PERSON",
+          "MOVE_TO_CHAIR",
+          "CHECK_TABLE",
+          "EXPLORE"
+        ],
+        "targeted_refresh_recommendations": [
+          "Dry-run mode: execute without --dry-run to evaluate promotion gates and deltas."
+        ]
+      }
+    }
+  ]
+}

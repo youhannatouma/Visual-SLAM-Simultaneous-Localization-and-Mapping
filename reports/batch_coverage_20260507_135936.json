@@ -1,0 +1,26 @@
+{
+  "timestamp": 1778151610,
+  "batch_id": "batch_I_real",
+  "scenario": "transitions",
+  "rows_total": 61,
+  "scenario_class_counts": [
+    {
+      "batch_id": "batch_I_real",
+      "scenario": "transitions",
+      "label": "AVOID_PERSON",
+      "count": 58
+    },
+    {
+      "batch_id": "batch_I_real",
+      "scenario": "transitions",
+      "label": "EXPLORE",
+      "count": 1
+    },
+    {
+      "batch_id": "batch_I_real",
+      "scenario": "transitions",
+      "label": "MOVE_TO_CHAIR",
+      "count": 2
+    }
+  ]
+}

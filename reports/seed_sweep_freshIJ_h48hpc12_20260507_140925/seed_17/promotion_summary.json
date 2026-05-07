@@ -1,0 +1,54 @@
+{
+  "status": "not_promoted",
+  "promotable": false,
+  "baseline_path": "reports/metrics_promoted_baseline.json",
+  "current_metrics_path": "reports/seed_sweep_freshIJ_h48hpc12_20260507_140925/seed_17/metrics.json",
+  "gate_results": {
+    "test_accuracy_non_regression": {
+      "passed": true,
+      "old": 0.6320346320346321,
+      "new": 0.683982683982684,
+      "tolerance": 0.005
+    },
+    "key_class_f1_non_regression": {
+      "passed": true,
+      "classes": {
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.5714285714285714,
+          "new_f1": 0.603174603174603
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": true,
+          "old_f1": 0.49557522123893805,
+          "new_f1": 0.6194690265486725
+        }
+      }
+    },
+    "fresh_real_improvement": {
+      "passed": false,
+      "old": {
+        "accuracy": 0.5217391304347826,
+        "macro_f1": 0.3894230769230769
+      },
+      "new": {
+        "accuracy": 0.5641025641025641,
+        "macro_f1": 0.5394586894586895
+      },
+      "delta": {
+        "accuracy": 0.0423634336677815,
+        "macro_f1": 0.15003561253561254
+      },
+      "required_delta": {
+        "accuracy": 0.1,
+        "macro_f1": 0.1
+      }
+    }
+  },
+  "failure_reasons": [
+    "Fresh-real improvement gate not met (delta accuracy=0.0423634336677815, delta macro_f1=0.15003561253561254)."
+  ],
+  "recommended_actions": [
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+  ]
+}

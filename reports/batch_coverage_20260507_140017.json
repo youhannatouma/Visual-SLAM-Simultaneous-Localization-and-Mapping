@@ -1,0 +1,26 @@
+{
+  "timestamp": 1778151982,
+  "batch_id": "batch_J_real",
+  "scenario": "clutter",
+  "rows_total": 304,
+  "scenario_class_counts": [
+    {
+      "batch_id": "batch_J_real",
+      "scenario": "clutter",
+      "label": "AVOID_PERSON",
+      "count": 215
+    },
+    {
+      "batch_id": "batch_J_real",
+      "scenario": "clutter",
+      "label": "EXPLORE",
+      "count": 88
+    },
+    {
+      "batch_id": "batch_J_real",
+      "scenario": "clutter",
+      "label": "MOVE_TO_CHAIR",
+      "count": 1
+    }
+  ]
+}

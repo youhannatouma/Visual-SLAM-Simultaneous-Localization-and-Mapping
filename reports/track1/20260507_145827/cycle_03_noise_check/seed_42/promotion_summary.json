@@ -1,0 +1,85 @@
+{
+  "status": "not_promoted",
+  "promotable": false,
+  "baseline_path": "reports/metrics_promoted_baseline.json",
+  "current_metrics_path": "reports/track1/20260507_145827/cycle_03_noise_check/seed_42/metrics.json",
+  "gate_results": {
+    "test_accuracy_non_regression": {
+      "passed": true,
+      "old": 0.6320346320346321,
+      "new": 0.6692015209125475,
+      "tolerance": 0.005
+    },
+    "key_class_f1_non_regression": {
+      "passed": true,
+      "classes": {
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.5714285714285714,
+          "new_f1": 0.6285714285714286
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": true,
+          "old_f1": 0.49557522123893805,
+          "new_f1": 0.6119402985074627
+        }
+      }
+    },
+    "fresh_real_improvement": {
+      "passed": false,
+      "old": {
+        "accuracy": 0.5217391304347826,
+        "macro_f1": 0.3894230769230769
+      },
+      "new": {
+        "accuracy": 0.48717948717948717,
+        "macro_f1": 0.44056618819776716
+      },
+      "delta": {
+        "accuracy": -0.034559643255295425,
+        "macro_f1": 0.051143111274690234
+      },
+      "required_delta": {
+        "accuracy": 0.1,
+        "macro_f1": 0.1
+      }
+    },
+    "fresh_real_per_class_non_regression": {
+      "passed": false,
+      "classes": {
+        "AVOID_PERSON": {
+          "passed": true,
+          "old_f1": 0.0,
+          "new_f1": 0.16666666666666666,
+          "delta_f1": 0.16666666666666666
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": false,
+          "old_f1": 0.75,
+          "new_f1": 0.4210526315789474,
+          "delta_f1": -0.3289473684210526
+        },
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.3076923076923077,
+          "new_f1": 0.45454545454545453,
+          "delta_f1": 0.14685314685314682
+        },
+        "EXPLORE": {
+          "passed": true,
+          "old_f1": 0.5,
+          "new_f1": 0.7199999999999999,
+          "delta_f1": 0.21999999999999986
+        }
+      }
+    }
+  },
+  "failure_reasons": [
+    "Fresh-real improvement gate not met (delta accuracy=-0.034559643255295425, delta macro_f1=0.051143111274690234).",
+    "Fresh-real per-class regression detected (mixed-sign deltas)."
+  ],
+  "recommended_actions": [
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.",
+    "Continue data-refresh cycles and target regressing fresh-real classes before promotion."
+  ]
+}

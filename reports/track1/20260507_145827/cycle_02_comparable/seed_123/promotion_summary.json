@@ -1,0 +1,83 @@
+{
+  "status": "not_promoted",
+  "promotable": false,
+  "baseline_path": "reports/metrics_promoted_baseline.json",
+  "current_metrics_path": "reports/track1/20260507_145827/cycle_02_comparable/seed_123/metrics.json",
+  "gate_results": {
+    "test_accuracy_non_regression": {
+      "passed": true,
+      "old": 0.6320346320346321,
+      "new": 0.7262357414448669,
+      "tolerance": 0.005
+    },
+    "key_class_f1_non_regression": {
+      "passed": true,
+      "classes": {
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.5714285714285714,
+          "new_f1": 0.6875
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": true,
+          "old_f1": 0.49557522123893805,
+          "new_f1": 0.6518518518518519
+        }
+      }
+    },
+    "fresh_real_improvement": {
+      "passed": false,
+      "old": {
+        "accuracy": 0.5217391304347826,
+        "macro_f1": 0.3894230769230769
+      },
+      "new": {
+        "accuracy": 0.6086956521739131,
+        "macro_f1": 0.49754901960784315
+      },
+      "delta": {
+        "accuracy": 0.08695652173913049,
+        "macro_f1": 0.10812594268476622
+      },
+      "required_delta": {
+        "accuracy": 0.1,
+        "macro_f1": 0.1
+      }
+    },
+    "fresh_real_per_class_non_regression": {
+      "passed": true,
+      "classes": {
+        "AVOID_PERSON": {
+          "passed": true,
+          "old_f1": 0.0,
+          "new_f1": 0.0,
+          "delta_f1": 0.0
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": true,
+          "old_f1": 0.75,
+          "new_f1": 0.8333333333333333,
+          "delta_f1": 0.08333333333333326
+        },
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.3076923076923077,
+          "new_f1": 0.3333333333333333,
+          "delta_f1": 0.025641025641025605
+        },
+        "EXPLORE": {
+          "passed": true,
+          "old_f1": 0.5,
+          "new_f1": 0.823529411764706,
+          "delta_f1": 0.32352941176470595
+        }
+      }
+    }
+  },
+  "failure_reasons": [
+    "Fresh-real improvement gate not met (delta accuracy=0.08695652173913049, delta macro_f1=0.10812594268476622)."
+  ],
+  "recommended_actions": [
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "baseline": "reports/metrics_promoted_baseline.json",
+  "runs": {
+    "17": "reports/track1/20260507_145827/cycle_03_noise_check/seed_17/metrics.json",
+    "42": "reports/track1/20260507_145827/cycle_03_noise_check/seed_42/metrics.json",
+    "123": "reports/track1/20260507_145827/cycle_03_noise_check/seed_123/metrics.json"
+  },
+  "best": {
+    "seed": 123,
+    "move_to_chair_f1": 0.62015503875969,
+    "macro_f1": 0.7345234195872912,
+    "metrics": "reports/track1/20260507_145827/cycle_03_noise_check/seed_123/metrics.json",
+    "promotable": true,
+    "failure_reasons": [],
+    "recommended_actions": []
+  },
+  "ranked_runs": [
+    {
+      "seed": 123,
+      "promotable": true,
+      "non_regressing": true,
+      "move_to_chair_f1": 0.62015503875969,
+      "macro_f1": 0.7345234195872912,
+      "metrics": "reports/track1/20260507_145827/cycle_03_noise_check/seed_123/metrics.json",
+      "failure_reasons": [],
+      "recommended_actions": []
+    },
+    {
+      "seed": 42,
+      "promotable": false,
+      "non_regressing": false,
+      "move_to_chair_f1": 0.6119402985074627,
+      "macro_f1": 0.6735207889125799,
+      "metrics": "reports/track1/20260507_145827/cycle_03_noise_check/seed_42/metrics.json",
+      "failure_reasons": [
+        "Fresh-real improvement gate not met (delta accuracy=-0.034559643255295425, delta macro_f1=0.051143111274690234).",
+        "Fresh-real per-class regression detected (mixed-sign deltas)."
+      ],
+      "recommended_actions": [
+        "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.",
+        "Continue data-refresh cycles and target regressing fresh-real classes before promotion."
+      ]
+    },
+    {
+      "seed": 17,
+      "promotable": false,
+      "non_regressing": false,
+      "move_to_chair_f1": 0.5915492957746479,
+      "macro_f1": 0.6722099280535001,
+      "metrics": "reports/track1/20260507_145827/cycle_03_noise_check/seed_17/metrics.json",
+      "failure_reasons": [
+        "Key class F1 regression detected.",
+        "Fresh-real improvement gate not met (delta accuracy=0.09364548494983282, delta macro_f1=0.2219833656046471).",
+        "Fresh-real per-class regression detected (mixed-sign deltas)."
+      ],
+      "recommended_actions": [
+        "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
+        "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.",
+        "Continue data-refresh cycles and target regressing fresh-real classes before promotion."
+      ]
+    }
+  ]
+}

@@ -74,6 +74,30 @@ def parse_args():
         default=1.0,
         help="Minimum free disk (GB) passed to the guarded pipeline.",
     )
+    parser.add_argument(
+        "--holdout-per-class",
+        type=int,
+        default=8,
+        help="Rows per class used to assemble fresh-real holdout.",
+    )
+    parser.add_argument(
+        "--holdout-min-total",
+        type=int,
+        default=32,
+        help="Minimum total rows required in fresh-real holdout.",
+    )
+    parser.add_argument(
+        "--holdout-min-sources",
+        type=int,
+        default=2,
+        help="Minimum distinct real sources required in fresh-real holdout.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=30,
+        help="Training epochs forwarded to guarded pipeline.",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +123,10 @@ def run_pipeline(
     summary_path,
     baseline_path,
     disk_min_free_gb,
+    holdout_per_class,
+    holdout_min_total,
+    holdout_min_sources,
+    epochs,
 ):
     report_path = os.path.join(report_dir, "dataset_audit.json")
     manifest_path = os.path.join(report_dir, "manifest", "dataset_manifest.json")
@@ -127,6 +155,14 @@ def run_pipeline(
         changelog_path,
         "--disk-min-free-gb",
         str(disk_min_free_gb),
+        "--holdout-per-class",
+        str(holdout_per_class),
+        "--holdout-min-total",
+        str(holdout_min_total),
+        "--holdout-min-sources",
+        str(holdout_min_sources),
+        "--epochs",
+        str(epochs),
         "--no-promotion-write",
         "--allow-non-promotable",
     ]
@@ -139,6 +175,16 @@ def load_metrics(path):
     per_class = data.get("per_class", {})
     macro_f1 = data.get("macro_f1")
     return data, test_acc, per_class, macro_f1
+
+
+def load_promotion_summary(path):
+    summary_path = Path(path)
+    if not summary_path.exists():
+        return {}
+    try:
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def is_non_regressing(baseline, candidate):
@@ -159,20 +205,42 @@ def is_non_regressing(baseline, candidate):
     return True
 
 
-def select_best(baseline, candidates):
-    eligible = []
+def select_and_rank_runs(baseline, candidates, promotion_summaries):
+    ranked = []
     for seed, metrics_path in candidates.items():
         metrics = load_metrics(metrics_path)
-        if is_non_regressing(baseline, metrics):
-            _, _, per_class, macro_f1 = metrics
-            move_f1 = per_class.get("MOVE_TO_CHAIR", {}).get("f1", 0.0)
-            eligible.append((seed, move_f1, macro_f1 or 0.0, metrics_path))
+        _, _, per_class, macro_f1 = metrics
+        move_f1 = per_class.get("MOVE_TO_CHAIR", {}).get("f1", 0.0)
+        promotion = promotion_summaries.get(seed, {})
+        promotable = bool(promotion.get("promotable", False))
+        non_regressing = is_non_regressing(baseline, metrics)
+        failure_reasons = promotion.get("failure_reasons", [])
+        recommended_actions = promotion.get("recommended_actions", [])
+        ranked.append(
+            {
+                "seed": int(seed),
+                "promotable": promotable,
+                "non_regressing": bool(non_regressing),
+                "move_to_chair_f1": float(move_f1 or 0.0),
+                "macro_f1": float(macro_f1 or 0.0),
+                "metrics": metrics_path,
+                "failure_reasons": failure_reasons,
+                "recommended_actions": recommended_actions,
+            }
+        )
 
-    if not eligible:
-        return None
+    if not ranked:
+        return None, []
 
-    eligible.sort(key=lambda x: (x[1], x[2]), reverse=True)
-    return eligible[0]
+    ranked.sort(
+        key=lambda r: (
+            1 if r["promotable"] else 0,
+            r["move_to_chair_f1"],
+            r["macro_f1"],
+        ),
+        reverse=True,
+    )
+    return ranked[0], ranked
 
 
 def promote_best(best_seed, report_dir, model_path, canonical_report_dir, canonical_model):
@@ -211,6 +279,7 @@ def main():
     baseline = load_metrics(args.baseline)
 
     metrics_paths = {}
+    promotion_summaries = {}
     for seed in seeds:
         run_dir = os.path.join(out_root, f"seed_{seed}")
         out_dir = os.path.join(processed_root, f"seed_{seed}")
@@ -229,6 +298,10 @@ def main():
                 summary_path,
                 args.baseline,
                 args.disk_min_free_gb,
+                args.holdout_per_class,
+                args.holdout_min_total,
+                args.holdout_min_sources,
+                args.epochs,
             )
         except subprocess.CalledProcessError as exc:
             print(f"Seed {seed} failed: {exc}")
@@ -239,24 +312,32 @@ def main():
         metrics_path = os.path.join(run_dir, "metrics.json")
         if os.path.exists(metrics_path):
             metrics_paths[seed] = metrics_path
+        promotion_summaries[seed] = load_promotion_summary(summary_path)
 
-    best = select_best(baseline, metrics_paths)
+    best, ranked = select_and_rank_runs(baseline, metrics_paths, promotion_summaries)
     summary = {
         "baseline": args.baseline,
         "runs": metrics_paths,
         "best": None,
+        "ranked_runs": ranked,
     }
 
     if best is not None:
-        best_seed, move_f1, macro_f1, metrics_path = best
+        best_seed = best["seed"]
+        move_f1 = best["move_to_chair_f1"]
+        macro_f1 = best["macro_f1"]
+        metrics_path = best["metrics"]
         summary["best"] = {
             "seed": best_seed,
             "move_to_chair_f1": float(move_f1),
             "macro_f1": float(macro_f1),
             "metrics": metrics_path,
+            "promotable": bool(best.get("promotable", False)),
+            "failure_reasons": best.get("failure_reasons", []),
+            "recommended_actions": best.get("recommended_actions", []),
         }
 
-        if args.promote_best:
+        if args.promote_best and bool(best.get("promotable", False)):
             promote_best(
                 best_seed,
                 os.path.dirname(metrics_path),
@@ -264,8 +345,10 @@ def main():
                 args.canonical_report_dir,
                 args.canonical_model,
             )
+        elif args.promote_best:
+            print("Best run is not promotable; skipping promotion write.")
     else:
-        print("No non-regressing runs found.")
+        print("No completed runs found.")
 
     summary_path = Path(out_root) / "seed_sweep_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

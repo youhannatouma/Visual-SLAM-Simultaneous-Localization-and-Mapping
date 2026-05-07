@@ -1,0 +1,58 @@
+{
+  "status": "not_promoted",
+  "promotable": false,
+  "baseline_path": "reports/metrics_promoted_baseline.json",
+  "current_metrics_path": "reports/tuning_20260507_134005/exp_08_hpc10_hmin32_hn0p25/seed_42/metrics.json",
+  "gate_results": {
+    "test_accuracy_non_regression": {
+      "passed": false,
+      "old": 0.65,
+      "new": 0.6363636363636364,
+      "tolerance": 0.005
+    },
+    "key_class_f1_non_regression": {
+      "passed": false,
+      "classes": {
+        "CHECK_TABLE": {
+          "passed": true,
+          "old_f1": 0.25,
+          "new_f1": 0.603174603174603
+        },
+        "MOVE_TO_CHAIR": {
+          "passed": false,
+          "old_f1": 0.9090909090909091,
+          "new_f1": 0.55
+        }
+      }
+    },
+    "fresh_real_improvement": {
+      "passed": false,
+      "old": {
+        "accuracy": 0.7738095238095238,
+        "macro_f1": 0.7378790263387703
+      },
+      "new": {
+        "accuracy": 0.5161290322580645,
+        "macro_f1": 0.4833333333333333
+      },
+      "delta": {
+        "accuracy": -0.25768049155145933,
+        "macro_f1": -0.25454569300543706
+      },
+      "required_delta": {
+        "accuracy": 0.1,
+        "macro_f1": 0.1
+      }
+    }
+  },
+  "failure_reasons": [
+    "Test accuracy regressed (0.65 -> 0.6363636363636364).",
+    "Key class F1 regression detected.",
+    "Fresh-real improvement gate not met (delta accuracy=-0.25768049155145933, delta macro_f1=-0.25454569300543706)."
+  ],
+  "recommended_actions": [
+    "Collect more diverse real samples and rebalance weak classes before retraining.",
+    "Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.",
+    "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+  ]
+}
