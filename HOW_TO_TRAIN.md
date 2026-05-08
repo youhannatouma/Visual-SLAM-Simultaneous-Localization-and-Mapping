@@ -1,4 +1,4 @@
-STEP 2 — Collect Training Videos
+STEP 2 — Collect Training Videos-------------------------------------------------
 
 Record videos with:
 
@@ -27,20 +27,15 @@ Aim for:
 multiple lighting conditions
 moving camera
 different object distances
-STEP 3 — Generate Initial Labels Automatically
+STEP 3 — Generate Initial Labels Automatically-------------------------------------------------
 
 Use your autolabel mode:
 
 python video_processor.py autolabel --video videos/room1.mp4 --output data/raw/room1.csv
 
-Do this for ALL videos.
 
-Example:
 
-python video_processor.py autolabel --video videos/office.mp4 --output data/raw/office.csv
-
-python video_processor.py autolabel --video videos/kitchen.mp4 --output data/raw/kitchen.csv
-STEP 4 — Manually Correct Labels (IMPORTANT)
+STEP 4 — Manually Correct Labels (IMPORTANT)----------------------------------------------------------------
 
 Auto-labeling is NEVER enough.
 
@@ -64,19 +59,19 @@ This is the MOST IMPORTANT step.
 
 Good labels = good AI.
 
-STEP 5 — Merge CSV Files
-You’ll have many CSVs. use merge.py
+STEP 5 — Merge CSV Files----------------------------------------------------------------------------
+python merge.py
 
-STEP 6 — Split Train / Validation / Test
-use split_dataset.py
+STEP 6 — Split Train / Validation / Test------------------------------------------------------------------
+python split_dataset.py
 
-STEP 7 — Train the Model
+STEP 7 — Train the Model-----------------------------------------------------------------------------
 
 Now train:
 
 python train_reasoning.py --train data/processed/train.csv --val data/processed/val.csv --test data/processed/test.csv --epochs 40 --batch-size 64 --lr 0.001
 
-STEP 8 — What Happens During Training
+STEP 8 — What Happens During Training--------------------------------------------------------------
 
 You’ll see:
 
@@ -93,7 +88,7 @@ And generates:
 reports/metrics.json
 reports/confusion_matrix.png
 
-STEP 9 — Use the Trained AI
+STEP 9 — Use the Trained AI---------------------------------------------------------------------
 
 Now run the main system:
 
@@ -144,6 +139,8 @@ motion understanding
 temporal reasoning
 prediction stability
 navigation quality
+
+
 STEP 12 — Expected Accuracy
 
 Approximate:
