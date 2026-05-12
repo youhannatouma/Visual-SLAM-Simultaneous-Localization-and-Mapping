@@ -1,0 +1,19 @@
+{
+  "frame_labels": [
+    {"frame": 1, "label": "EXPLORE"},
+    {"frame": 2, "label": "MOVE_TO_CHAIR"},
+    {"frame": 3, "label": "CHECK_TABLE"},
+    {"frame": 4, "label": "AVOID_PERSON"}
+  ],
+  "obstacles": [
+    {"frame": 1, "grid_xy": [60, 58]},
+    {"frame": 2, "grid_xy": [61, 58]},
+    {"frame": 3, "grid_xy": [62, 59]},
+    {"frame": 4, "grid_xy": [63, 60]}
+  ],
+  "meta": {
+    "description": "Starter benchmark GT template for mapping lane validation. Replace with real per-video annotations for promotion-grade evaluation.",
+    "grid_size": 120,
+    "notes": "Frame ids must match the processed video frames in main.py runtime."
+  }
+}

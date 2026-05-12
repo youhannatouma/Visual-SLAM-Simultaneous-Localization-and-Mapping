@@ -1,10 +1,10 @@
 {
-  "timestamp": 1778162020,
+  "timestamp": 1778494452,
   "sizes_gb": {
     "images": 0.0,
-    "data_raw": 0.0007,
+    "data_raw": 0.0008,
     "data_raw_archive": 0.0049,
-    "data_processed": 0.0016,
-    "reports": 0.0156
+    "data_processed": 0.0017,
+    "reports": 0.0189
   }
 }

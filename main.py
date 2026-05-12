@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import threading
 import time
@@ -15,7 +16,11 @@ from mapping_runtime import (
     compute_label_metrics,
     compute_loop_closure_drift,
     compute_map_consistency_score,
+    compute_mapping_quality_summary,
+    compute_obstacle_persistence_stability,
     compute_obstacle_precision_recall,
+    compute_occupancy_confidence_concentration,
+    compute_pose_jitter_score,
     dataclass_to_dict,
     load_run_annotations,
     parse_action_label,
@@ -175,6 +180,39 @@ def draw_confidence_bars(frame, detections, panel_x, start_y):
         draw_text(frame, f"{conf:.0%}", (panel_x + 148, y + 11), C_WHITE, 0.36)
 
 
+def robust_orb_flow_delta(prev_kp, prev_des, kp, des, matcher, top_k: int = 80):
+    if prev_des is None or des is None or len(prev_des) < 8 or len(des) < 8:
+        return 0.0, 0.0, 0.0, 0.0
+    matches = matcher.match(prev_des, des)
+    if len(matches) < 12:
+        return 0.0, 0.0, 0.0, 0.0
+    matches = sorted(matches, key=lambda m: m.distance)[: max(12, int(top_k))]
+    src = np.float32([prev_kp[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+    dst = np.float32([kp[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+    aff, inliers = cv2.estimateAffinePartial2D(src, dst, method=cv2.RANSAC, ransacReprojThreshold=3.0)
+    if aff is None or inliers is None:
+        return 0.0, 0.0, 0.0, 0.0
+    inlier_mask_aff = inliers.ravel().astype(bool)
+    inlier_ratio = float(np.mean(inlier_mask_aff)) if inlier_mask_aff.size else 0.0
+    if np.sum(inlier_mask_aff) < 8:
+        return 0.0, 0.0, 0.0, inlier_ratio
+
+    dxs = np.array([kp[m.trainIdx].pt[0] - prev_kp[m.queryIdx].pt[0] for m in matches], dtype=np.float32)
+    dys = np.array([kp[m.trainIdx].pt[1] - prev_kp[m.queryIdx].pt[1] for m in matches], dtype=np.float32)
+    med_dx = float(np.median(dxs))
+    med_dy = float(np.median(dys))
+    residual = np.sqrt((dxs - med_dx) ** 2 + (dys - med_dy) ** 2)
+    mad = float(np.median(np.abs(residual - np.median(residual)))) + 1e-6
+    thr = max(1.5, 3.5 * mad)
+    inlier_mask = (residual <= thr) & inlier_mask_aff
+    if int(np.sum(inlier_mask)) < 8:
+        return 0.0, 0.0, 0.0, inlier_ratio
+    in_dx = float(np.mean(dxs[inlier_mask]))
+    in_dy = float(np.mean(dys[inlier_mask]))
+    dtheta = float(np.arctan2(aff[1, 0], aff[0, 0]))
+    return in_dx, in_dy, dtheta, inlier_ratio
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="AI Visual Navigation System")
     p.add_argument("--video", default="", help="Path to a video file. Empty uses webcam.")
@@ -191,6 +229,28 @@ def parse_args():
     p.add_argument("--map-camera-fov-deg", type=float, default=70.0, help="Camera horizontal FOV in degrees.")
     p.add_argument("--map-ray-step-cells", type=int, default=1, help="Step size for free-space rays.")
     p.add_argument("--pose-motion-to-meter-scale", type=float, default=0.0025, help="ORB px-motion to meter scale.")
+    p.add_argument("--pose-motion-deadband-px", type=float, default=0.8, help="Ignore tiny ORB motion under this pixel magnitude.")
+    p.add_argument("--pose-min-flow-quality", type=float, default=0.30, help="Minimum ORB inlier ratio required to apply pose update.")
+    p.add_argument("--pose-jitter-min-motion-m", type=float, default=0.002, help="Min per-frame motion used in jitter evaluation.")
+    p.add_argument("--pose-smoothing-window", type=int, default=5, help="Smoothing window for pose deltas.")
+    p.add_argument("--pose-max-translation-m", type=float, default=0.08, help="Max translation per frame in meters.")
+    p.add_argument("--pose-max-rotation-rad", type=float, default=0.35, help="Max heading change per frame in radians.")
+    p.add_argument("--map-confidence-weighting", action="store_true", default=True, help="Enable confidence-weighted occupancy updates.")
+    p.add_argument("--no-map-confidence-weighting", action="store_false", dest="map_confidence_weighting", help="Disable confidence-weighted occupancy updates.")
+    p.add_argument("--map-confidence-strength", type=float, default=1.0, help="Exponent controlling confidence-weighting strength.")
+    p.add_argument("--map-obstacle-persistence-frames", type=int, default=2, help="Frames required for strong obstacle reinforcement.")
+    p.add_argument("--map-loop-closure-enabled", action="store_true", default=True, help="Enable lightweight loop-closure snap-back.")
+    p.add_argument("--no-map-loop-closure-enabled", action="store_false", dest="map_loop_closure_enabled", help="Disable loop-closure snap-back.")
+    p.add_argument("--map-loop-closure-radius-m", type=float, default=0.25, help="Revisit radius for loop-closure candidates.")
+    p.add_argument("--map-loop-closure-min-frame-gap", type=int, default=80, help="Minimum frame gap between closure candidates.")
+    p.add_argument("--map-loop-closure-max-heading-delta-rad", type=float, default=0.55, help="Maximum heading delta for closure candidates.")
+    p.add_argument("--map-loop-closure-correction-alpha", type=float, default=0.25, help="Smoothing factor for applying loop-closure corrections.")
+    p.add_argument("--map-loop-closure-cooldown-frames", type=int, default=45, help="Cooldown frames after applying a loop closure.")
+    p.add_argument("--map-render-raw-trajectory", action="store_true", default=False, help="Overlay raw (uncorrected) trajectory in map view.")
+    p.add_argument("--map-require-benchmark-for-promotion", action="store_true", default=True, help="Require GT benchmark lane to mark mapping as promotable.")
+    p.add_argument("--no-map-require-benchmark-for-promotion", action="store_false", dest="map_require_benchmark_for_promotion", help="Allow unsupervised lane to be promotable.")
+    p.add_argument("--map-gate-pose-jitter-min", type=float, default=0.40, help="Minimum pose jitter score gate.")
+    p.add_argument("--map-gate-benchmark-f1-min", type=float, default=0.45, help="Minimum obstacle F1 gate in benchmark lane.")
 
     p.add_argument(
         "--run-annotations",
@@ -250,12 +310,31 @@ def main():
             free_decrement=args.map_free_decrement,
             camera_fov_deg=args.map_camera_fov_deg,
             ray_step_cells=args.map_ray_step_cells,
+            pose_smoothing_window=args.pose_smoothing_window,
+            max_translation_m_per_frame=args.pose_max_translation_m,
+            max_rotation_rad_per_frame=args.pose_max_rotation_rad,
+            confidence_weighting=args.map_confidence_weighting,
+            confidence_strength=args.map_confidence_strength,
+            obstacle_persistence_frames=args.map_obstacle_persistence_frames,
+            loop_closure_enabled=args.map_loop_closure_enabled,
+            loop_closure_radius_m=args.map_loop_closure_radius_m,
+            loop_closure_min_frame_gap=args.map_loop_closure_min_frame_gap,
+            loop_closure_max_heading_delta_rad=args.map_loop_closure_max_heading_delta_rad,
+            loop_closure_correction_alpha=args.map_loop_closure_correction_alpha,
+            loop_closure_cooldown_frames=args.map_loop_closure_cooldown_frames,
+            render_raw_trajectory=args.map_render_raw_trajectory,
         )
 
-    run_annotations = load_run_annotations(args.run_annotations)
+    annotations_path = args.run_annotations
+    default_benchmark_gt = "data/annotations/mapping_benchmark_gt.json"
+    if not annotations_path and args.video and os.path.exists(default_benchmark_gt):
+        annotations_path = default_benchmark_gt
+        print(f"[Eval] Auto-using benchmark GT: {annotations_path}")
+
+    run_annotations = load_run_annotations(annotations_path)
     if run_annotations.get("available"):
-        print(f"[Eval] Loaded annotations: {args.run_annotations}")
-    elif args.run_annotations:
+        print(f"[Eval] Loaded annotations: {annotations_path}")
+    elif annotations_path:
         print(f"[Eval] {run_annotations.get('reason', 'Annotation unavailable')}")
 
     orb = cv2.ORB_create(nfeatures=400)
@@ -325,29 +404,35 @@ def main():
         arrow = None
         dx = 0.0
         dy = 0.0
-        if prev_des is not None and des is not None:
-            matches = bf.match(prev_des, des)
-            if len(matches) > 10:
-                pts = [
-                    (kp[m.trainIdx].pt[0] - prev_kp[m.queryIdx].pt[0], kp[m.trainIdx].pt[1] - prev_kp[m.queryIdx].pt[1])
-                    for m in matches[:20]
-                ]
-                dx = sum(p[0] for p in pts) / len(pts)
-                dy = sum(p[1] for p in pts) / len(pts)
-                if abs(dx) > abs(dy):
-                    if dx > 2:
-                        motion_text, arrow = "Moving Right", (80, 0)
-                    if dx < -2:
-                        motion_text, arrow = "Moving Left", (-80, 0)
-                else:
-                    if dy > 2:
-                        motion_text, arrow = "Moving Down", (0, 80)
-                    if dy < -2:
-                        motion_text, arrow = "Moving Up", (0, -80)
+        dtheta = 0.0
+        flow_quality = 0.0
+        if prev_kp is not None and prev_des is not None and kp is not None and des is not None:
+            dx, dy, dtheta, flow_quality = robust_orb_flow_delta(prev_kp, prev_des, kp, des, bf, top_k=80)
+            if math.hypot(dx, dy) < float(args.pose_motion_deadband_px):
+                dx, dy, dtheta = 0.0, 0.0, 0.0
+            if flow_quality < float(args.pose_min_flow_quality):
+                dx, dy, dtheta = 0.0, 0.0, 0.0
+            if abs(dx) > abs(dy):
+                if dx > 2:
+                    motion_text, arrow = "Moving Right", (80, 0)
+                if dx < -2:
+                    motion_text, arrow = "Moving Left", (-80, 0)
+            else:
+                if dy > 2:
+                    motion_text, arrow = "Moving Down", (0, 80)
+                if dy < -2:
+                    motion_text, arrow = "Moving Up", (0, -80)
         prev_kp, prev_des = kp, des
 
         if use_mapping and mapper is not None:
-            mapper.update_pose_from_orb(dx_px=dx, dy_px=dy, timestamp=now_ts, motion_to_meter_scale=args.pose_motion_to_meter_scale)
+            mapper.update_pose_from_flow(
+                dx_px=dx,
+                dy_px=dy,
+                dtheta_rad=dtheta,
+                timestamp=now_ts,
+                motion_to_meter_scale=args.pose_motion_to_meter_scale,
+                flow_quality=flow_quality,
+            )
 
         with state.lock:
             state.motion_text = motion_text
@@ -457,17 +542,68 @@ def main():
         obstacle_pr = {"available": False, "reason": reason}
 
     if mapper is not None:
+        loop_closure = compute_loop_closure_drift(mapper.pose_history)
+        corrected_loop_closure = compute_loop_closure_drift(mapper.corrected_pose_history)
+        consistency = compute_map_consistency_score(mapper.cell_event_counts)
+        pose_jitter = compute_pose_jitter_score(mapper.pose_history, min_motion_m=args.pose_jitter_min_motion_m)
+        obstacle_persistence = compute_obstacle_persistence_stability(mapper.frame_obstacles)
+        occupancy_confidence = compute_occupancy_confidence_concentration(mapper.grid)
+        lc_summary = mapper.loop_closure_summary()
+        mapping_quality_summary = compute_mapping_quality_summary(
+            loop_closure_drift=loop_closure,
+            map_consistency_score=consistency,
+            pose_jitter=pose_jitter,
+            obstacle_persistence=obstacle_persistence,
+            occupancy_concentration=occupancy_confidence,
+            obstacle_precision_recall=obstacle_pr,
+            require_benchmark=bool(args.map_require_benchmark_for_promotion),
+            threshold_overrides={
+                "pose_jitter_min": float(args.map_gate_pose_jitter_min),
+                "benchmark_obstacle_f1_min": float(args.map_gate_benchmark_f1_min),
+            },
+        )
         map_metrics = {
-            "loop_closure_drift": compute_loop_closure_drift(mapper.pose_history),
-            "map_consistency_score": compute_map_consistency_score(mapper.cell_event_counts),
+            "evaluation_lane": "benchmark_supervised" if obstacle_pr.get("available") else "live_unsupervised",
+            "loop_closure_drift": loop_closure,
+            "loop_closure_drift_corrected": corrected_loop_closure,
+            "loop_closure_drift_delta": {
+                "available": bool(loop_closure.get("available") and corrected_loop_closure.get("available")),
+                "translation_error_mean_m_delta": float(loop_closure.get("translation_error_mean_m", 0.0) - corrected_loop_closure.get("translation_error_mean_m", 0.0))
+                if loop_closure.get("available") and corrected_loop_closure.get("available")
+                else 0.0,
+                "heading_error_mean_rad_delta": float(loop_closure.get("heading_error_mean_rad", 0.0) - corrected_loop_closure.get("heading_error_mean_rad", 0.0))
+                if loop_closure.get("available") and corrected_loop_closure.get("available")
+                else 0.0,
+            },
+            "map_consistency_score": consistency,
+            "pose_jitter": pose_jitter,
+            "obstacle_persistence_stability": obstacle_persistence,
+            "occupancy_confidence_concentration": occupancy_confidence,
             "obstacle_precision_recall": obstacle_pr,
+            "loop_closure_corrections_applied": lc_summary.get("corrections_applied", 0),
+            "mean_correction_translation_m": lc_summary.get("mean_correction_translation_m", 0.0),
+            "mean_correction_heading_rad": lc_summary.get("mean_correction_heading_rad", 0.0),
+            "post_closure_path_alignment_score": lc_summary.get("post_closure_path_alignment_score", 0.0),
+            "loop_closure_state": lc_summary.get("state", "idle"),
+            "loop_closure_summary": lc_summary,
+            "mapping_quality_summary": mapping_quality_summary,
         }
         pose_stats = mapper.pose_stats()
     else:
         map_metrics = {
+            "evaluation_lane": "mapping_disabled",
             "loop_closure_drift": {"available": False, "reason": "Mapping disabled"},
             "map_consistency_score": {"available": False, "reason": "Mapping disabled"},
+            "pose_jitter": {"available": False, "reason": "Mapping disabled"},
+            "obstacle_persistence_stability": {"available": False, "reason": "Mapping disabled"},
+            "occupancy_confidence_concentration": {"available": False, "reason": "Mapping disabled"},
             "obstacle_precision_recall": obstacle_pr,
+            "mapping_quality_summary": {
+                "lane": "mapping_disabled",
+                "status": "not_available",
+                "promotable": False,
+                "require_benchmark": bool(args.map_require_benchmark_for_promotion),
+            },
         }
         pose_stats = {"available": False, "reason": "Mapping disabled"}
 
@@ -490,7 +626,26 @@ def main():
             "map_camera_fov_deg": float(args.map_camera_fov_deg),
             "map_ray_step_cells": int(args.map_ray_step_cells),
             "pose_motion_to_meter_scale": float(args.pose_motion_to_meter_scale),
-            "annotations_path": args.run_annotations,
+            "pose_motion_deadband_px": float(args.pose_motion_deadband_px),
+            "pose_min_flow_quality": float(args.pose_min_flow_quality),
+            "pose_jitter_min_motion_m": float(args.pose_jitter_min_motion_m),
+            "pose_smoothing_window": int(args.pose_smoothing_window),
+            "pose_max_translation_m": float(args.pose_max_translation_m),
+            "pose_max_rotation_rad": float(args.pose_max_rotation_rad),
+            "map_confidence_weighting": bool(args.map_confidence_weighting),
+            "map_confidence_strength": float(args.map_confidence_strength),
+            "map_obstacle_persistence_frames": int(args.map_obstacle_persistence_frames),
+            "map_loop_closure_enabled": bool(args.map_loop_closure_enabled),
+            "map_loop_closure_radius_m": float(args.map_loop_closure_radius_m),
+            "map_loop_closure_min_frame_gap": int(args.map_loop_closure_min_frame_gap),
+            "map_loop_closure_max_heading_delta_rad": float(args.map_loop_closure_max_heading_delta_rad),
+            "map_loop_closure_correction_alpha": float(args.map_loop_closure_correction_alpha),
+            "map_loop_closure_cooldown_frames": int(args.map_loop_closure_cooldown_frames),
+            "map_render_raw_trajectory": bool(args.map_render_raw_trajectory),
+            "map_require_benchmark_for_promotion": bool(args.map_require_benchmark_for_promotion),
+            "map_gate_pose_jitter_min": float(args.map_gate_pose_jitter_min),
+            "map_gate_benchmark_f1_min": float(args.map_gate_benchmark_f1_min),
+            "annotations_path": annotations_path,
         },
         "timing": {
             "start_ts": float(run_start_ts),
@@ -500,7 +655,7 @@ def main():
         },
         "action_samples": [dataclass_to_dict(a) for a in action_samples],
         "map_events": [dataclass_to_dict(e) for e in map_events],
-        "warnings": [] if run_annotations.get("available", False) or not args.run_annotations else [run_annotations.get("reason")],
+        "warnings": [] if run_annotations.get("available", False) or not annotations_path else [run_annotations.get("reason")],
         "failures": [],
     }
     write_joint_report(report_out, payload)

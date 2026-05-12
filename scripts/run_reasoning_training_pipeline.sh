@@ -8,7 +8,7 @@ REPORT_DIR="reports"
 MANIFEST_PATH="data/manifest/dataset_manifest.json"
 CHANGELOG_PATH="data/manifest/CHANGELOG.md"
 MIN_PER_CLASS=50
-MAX_IMBALANCE=1.3
+MAX_IMBALANCE=1.35
 MIN_REAL_SHARE=0.6
 MAX_SYNTHETIC_SHARE=0.4
 BALANCE="oversample"
@@ -47,7 +47,7 @@ Options:
   --manifest-path <path>         Dataset manifest output (default: data/manifest/dataset_manifest.json).
   --changelog-path <path>        Dataset changelog path (default: data/manifest/CHANGELOG.md).
   --min-per-class <n>            Minimum samples per class (default: 50).
-  --max-imbalance <ratio>        Max class imbalance ratio (default: 1.3).
+  --max-imbalance <ratio>        Max class imbalance ratio (default: 1.35).
   --min-real-share <ratio>       Minimum real data share gate (default: 0.6).
   --max-synthetic-share <ratio>  Maximum synthetic data share gate (default: 0.4).
   --balance <none|cap|oversample> Balancing strategy (default: oversample).

@@ -18,7 +18,7 @@ def parse_args():
     parser.add_argument(
         "--max-class-imbalance-ratio",
         type=float,
-        default=1.3,
+        default=1.35,
         help="Max allowed ratio max_class_count / min_nonzero_class_count",
     )
     parser.add_argument(

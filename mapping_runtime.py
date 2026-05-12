@@ -2,6 +2,7 @@ import json
 import math
 import os
 import time
+from collections import deque
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -84,6 +85,19 @@ class LiveMapper:
         free_decrement: float = 0.05,
         camera_fov_deg: float = 70.0,
         ray_step_cells: int = 1,
+        pose_smoothing_window: int = 5,
+        max_translation_m_per_frame: float = 0.08,
+        max_rotation_rad_per_frame: float = 0.35,
+        confidence_weighting: bool = True,
+        confidence_strength: float = 1.0,
+        obstacle_persistence_frames: int = 2,
+        loop_closure_enabled: bool = True,
+        loop_closure_radius_m: float = 0.25,
+        loop_closure_min_frame_gap: int = 80,
+        loop_closure_max_heading_delta_rad: float = 0.55,
+        loop_closure_correction_alpha: float = 0.25,
+        loop_closure_cooldown_frames: int = 45,
+        render_raw_trajectory: bool = False,
     ):
         self.grid_size = int(grid_size)
         self.meters_per_cell = float(meters_per_cell)
@@ -92,6 +106,19 @@ class LiveMapper:
         self.free_decrement = float(free_decrement)
         self.camera_fov_deg = float(camera_fov_deg)
         self.ray_step_cells = max(1, int(ray_step_cells))
+        self.pose_smoothing_window = max(1, int(pose_smoothing_window))
+        self.max_translation_m_per_frame = max(1e-3, float(max_translation_m_per_frame))
+        self.max_rotation_rad_per_frame = max(1e-3, float(max_rotation_rad_per_frame))
+        self.confidence_weighting = bool(confidence_weighting)
+        self.confidence_strength = max(0.0, float(confidence_strength))
+        self.obstacle_persistence_frames = max(1, int(obstacle_persistence_frames))
+        self.loop_closure_enabled = bool(loop_closure_enabled)
+        self.loop_closure_radius_m = max(0.05, float(loop_closure_radius_m))
+        self.loop_closure_min_frame_gap = max(10, int(loop_closure_min_frame_gap))
+        self.loop_closure_max_heading_delta_rad = max(0.05, float(loop_closure_max_heading_delta_rad))
+        self.loop_closure_correction_alpha = float(np.clip(loop_closure_correction_alpha, 0.05, 1.0))
+        self.loop_closure_cooldown_frames = max(1, int(loop_closure_cooldown_frames))
+        self.render_raw_trajectory = bool(render_raw_trajectory)
 
         self.grid = np.full((self.grid_size, self.grid_size), 0.5, dtype=np.float32)
         self.pose = PoseSample(
@@ -102,9 +129,25 @@ class LiveMapper:
         )
         self.pose_history: List[PoseSample] = [self.pose]
         self.pose_grid_history: List[Tuple[int, int]] = [self.world_to_grid(self.pose.x, self.pose.y)]
+        self.corrected_pose = PoseSample(self.pose.x, self.pose.y, self.pose.theta, self.pose.timestamp)
+        self.corrected_pose_history: List[PoseSample] = [self.corrected_pose]
+        self.corrected_pose_grid_history: List[Tuple[int, int]] = [self.world_to_grid(self.corrected_pose.x, self.corrected_pose.y)]
+        self.raw_pose_grid_history: List[Tuple[int, int]] = list(self.pose_grid_history)
         self.map_events: List[MapEvent] = []
         self.frame_obstacles: Dict[int, Set[Tuple[int, int]]] = {}
         self.cell_event_counts: Dict[Tuple[int, int], Dict[str, int]] = {}
+        self.pose_delta_history: deque = deque(maxlen=self.pose_smoothing_window)
+        self.detection_cell_history: Dict[Tuple[str, int], deque] = {}
+        self.last_frame_obstacle_counts = {"strong": 0, "weak": 0}
+        self.frame_counter = 0
+        self.loop_closure_state = "idle"
+        self.loop_closure_cooldown_remaining = 0
+        self.pending_correction = {"dx": 0.0, "dy": 0.0, "dtheta": 0.0}
+        self.loop_closure_corrections_applied = 0
+        self.loop_closure_candidate_count = 0
+        self.loop_closure_rejections = 0
+        self.loop_closure_correction_records: List[Dict[str, float]] = []
+        self.post_closure_alignment_dists: List[float] = []
 
     def world_to_grid(self, x: float, y: float) -> Tuple[int, int]:
         gx = int(round(x / self.meters_per_cell))
@@ -116,13 +159,48 @@ class LiveMapper:
     def grid_to_world(self, gx: int, gy: int) -> Tuple[float, float]:
         return gx * self.meters_per_cell, gy * self.meters_per_cell
 
+    def _clip_pose_delta(self, tx: float, ty: float) -> Tuple[float, float]:
+        mag = math.hypot(tx, ty)
+        if mag <= self.max_translation_m_per_frame:
+            return tx, ty
+        scale = self.max_translation_m_per_frame / max(1e-9, mag)
+        return tx * scale, ty * scale
+
+    def _smooth_pose_delta(self, tx: float, ty: float) -> Tuple[float, float]:
+        self.pose_delta_history.append((float(tx), float(ty)))
+        sx = float(np.mean([p[0] for p in self.pose_delta_history]))
+        sy = float(np.mean([p[1] for p in self.pose_delta_history]))
+        return sx, sy
+
     def update_pose_from_orb(self, dx_px: float, dy_px: float, timestamp: float, motion_to_meter_scale: float) -> PoseSample:
-        # Convert image-plane flow to rough planar translation.
+        return self.update_pose_from_flow(dx_px, dy_px, 0.0, timestamp, motion_to_meter_scale, flow_quality=1.0)
+
+    def update_pose_from_flow(
+        self,
+        dx_px: float,
+        dy_px: float,
+        dtheta_rad: float,
+        timestamp: float,
+        motion_to_meter_scale: float,
+        flow_quality: float = 1.0,
+    ) -> PoseSample:
         tx = float(dx_px) * float(motion_to_meter_scale)
-        ty = float(dy_px) * float(motion_to_meter_scale)
-        theta = self.pose.theta
-        if abs(tx) > 1e-6 or abs(ty) > 1e-6:
-            theta = math.atan2(ty, tx)
+        # Image Y grows downward; invert for map/world coordinates.
+        ty = -float(dy_px) * float(motion_to_meter_scale)
+        q = float(np.clip(flow_quality, 0.0, 1.0))
+        tx *= q
+        ty *= q
+        tx, ty = self._clip_pose_delta(tx, ty)
+        tx, ty = self._smooth_pose_delta(tx, ty)
+
+        target_theta = self.pose.theta
+        if abs(dtheta_rad) > 1e-8:
+            target_theta = normalize_angle(self.pose.theta + float(dtheta_rad) * q)
+        elif abs(tx) > 1e-6 or abs(ty) > 1e-6:
+            target_theta = math.atan2(ty, tx)
+        heading_delta = normalize_angle(target_theta - self.pose.theta)
+        heading_delta = float(np.clip(heading_delta, -self.max_rotation_rad_per_frame, self.max_rotation_rad_per_frame))
+        theta = normalize_angle(self.pose.theta + heading_delta)
 
         self.pose = PoseSample(
             x=self.pose.x + tx,
@@ -130,14 +208,131 @@ class LiveMapper:
             theta=normalize_angle(theta),
             timestamp=float(timestamp),
         )
+        self.frame_counter += 1
         self.pose_history.append(self.pose)
-        self.pose_grid_history.append(self.world_to_grid(self.pose.x, self.pose.y))
+        self.raw_pose_grid_history.append(self.world_to_grid(self.pose.x, self.pose.y))
+        self._update_corrected_pose()
+        self.pose_grid_history = self.corrected_pose_grid_history
         return self.pose
+
+    def _find_loop_closure_candidate(self) -> Optional[Dict[str, float]]:
+        if not self.loop_closure_enabled:
+            return None
+        if len(self.pose_history) < self.loop_closure_min_frame_gap + 2:
+            return None
+        current_idx = len(self.pose_history) - 1
+        current = self.pose_history[current_idx]
+        best = None
+        best_dist = float("inf")
+        cutoff = current_idx - self.loop_closure_min_frame_gap
+        for i in range(max(0, cutoff)):
+            prev = self.pose_history[i]
+            d = math.hypot(current.x - prev.x, current.y - prev.y)
+            if d > self.loop_closure_radius_m:
+                continue
+            heading_delta = abs(normalize_angle(current.theta - prev.theta))
+            if heading_delta > self.loop_closure_max_heading_delta_rad:
+                continue
+            if d < best_dist:
+                best_dist = d
+                best = {
+                    "index": i,
+                    "distance": d,
+                    "heading_delta": heading_delta,
+                    "target_x": prev.x,
+                    "target_y": prev.y,
+                    "target_theta": prev.theta,
+                }
+        return best
+
+    def _apply_loop_closure_logic(self):
+        if self.loop_closure_cooldown_remaining > 0:
+            self.loop_closure_state = "cooldown"
+            self.loop_closure_cooldown_remaining -= 1
+            return
+        candidate = self._find_loop_closure_candidate()
+        if candidate is None:
+            self.loop_closure_state = "idle"
+            return
+        self.loop_closure_state = "candidate"
+        self.loop_closure_candidate_count += 1
+        dx = candidate["target_x"] - self.corrected_pose.x
+        dy = candidate["target_y"] - self.corrected_pose.y
+        dtheta = normalize_angle(candidate["target_theta"] - self.corrected_pose.theta)
+        correction_norm = math.hypot(dx, dy)
+        if correction_norm > (self.loop_closure_radius_m * 2.0):
+            self.loop_closure_rejections += 1
+            self.loop_closure_state = "idle"
+            return
+        self.pending_correction["dx"] += float(dx * self.loop_closure_correction_alpha)
+        self.pending_correction["dy"] += float(dy * self.loop_closure_correction_alpha)
+        self.pending_correction["dtheta"] += float(dtheta * self.loop_closure_correction_alpha)
+        self.loop_closure_state = "correcting"
+        self.loop_closure_corrections_applied += 1
+        self.loop_closure_correction_records.append(
+            {
+                "translation_m": float(math.hypot(dx * self.loop_closure_correction_alpha, dy * self.loop_closure_correction_alpha)),
+                "heading_rad": float(abs(dtheta * self.loop_closure_correction_alpha)),
+                "raw_distance_to_anchor_m": float(candidate["distance"]),
+            }
+        )
+        self.post_closure_alignment_dists.append(float(math.hypot(dx, dy)))
+        self.loop_closure_cooldown_remaining = self.loop_closure_cooldown_frames
+
+    def _update_corrected_pose(self):
+        prev_corr = self.corrected_pose_history[-1]
+        dx_raw = self.pose.x - self.pose_history[-2].x if len(self.pose_history) > 1 else 0.0
+        dy_raw = self.pose.y - self.pose_history[-2].y if len(self.pose_history) > 1 else 0.0
+        dtheta_raw = normalize_angle(self.pose.theta - self.pose_history[-2].theta) if len(self.pose_history) > 1 else 0.0
+        self._apply_loop_closure_logic()
+
+        corr_dx = self.pending_correction["dx"] * self.loop_closure_correction_alpha
+        corr_dy = self.pending_correction["dy"] * self.loop_closure_correction_alpha
+        corr_dtheta = self.pending_correction["dtheta"] * self.loop_closure_correction_alpha
+        self.pending_correction["dx"] -= corr_dx
+        self.pending_correction["dy"] -= corr_dy
+        self.pending_correction["dtheta"] -= corr_dtheta
+
+        new_pose = PoseSample(
+            x=prev_corr.x + dx_raw + corr_dx,
+            y=prev_corr.y + dy_raw + corr_dy,
+            theta=normalize_angle(prev_corr.theta + dtheta_raw + corr_dtheta),
+            timestamp=self.pose.timestamp,
+        )
+        self.corrected_pose = new_pose
+        self.corrected_pose_history.append(new_pose)
+        self.corrected_pose_grid_history.append(self.world_to_grid(new_pose.x, new_pose.y))
 
     def _range_from_area_ratio(self, area_ratio: float) -> float:
         area_ratio = max(1e-6, float(area_ratio))
         # Heuristic inverse relationship: larger object -> closer obstacle.
         return float(np.clip(0.30 / math.sqrt(area_ratio), 0.4, 4.0))
+
+    def _class_range_adjustment(self, label: str, rng: float) -> float:
+        if label == "person":
+            return float(np.clip(rng * 0.85, 0.3, 4.0))
+        if label == "chair":
+            return float(np.clip(rng * 0.95, 0.3, 4.0))
+        if label == "table":
+            return float(np.clip(rng * 1.1, 0.3, 5.0))
+        return rng
+
+    def _weighted_step(self, base_value: float, confidence: float, strong: bool) -> float:
+        if not self.confidence_weighting:
+            return base_value * (1.0 if strong else 0.5)
+        conf = float(np.clip(confidence, 0.0, 1.0))
+        weight = 0.35 + (conf ** max(0.1, self.confidence_strength))
+        if not strong:
+            weight *= 0.55
+        return base_value * weight
+
+    def _is_persistent_detection(self, track_id: int, label: str, cell: Tuple[int, int]) -> bool:
+        key = (str(label), int(track_id))
+        hist = self.detection_cell_history.setdefault(key, deque(maxlen=self.obstacle_persistence_frames))
+        hist.append(cell)
+        if len(hist) < self.obstacle_persistence_frames:
+            return False
+        return len(set(hist)) <= 2
 
     def project_detection_to_world(
         self,
@@ -150,6 +345,7 @@ class LiveMapper:
         area_ratio = area / float(max(1, w * h))
         bearing = ((float(cx) / max(1.0, float(w))) - 0.5) * math.radians(self.camera_fov_deg)
         rng = self._range_from_area_ratio(area_ratio)
+        rng = self._class_range_adjustment(str(det.get("label", "")), rng)
         ang = self.pose.theta + bearing
         wx = self.pose.x + rng * math.cos(ang)
         wy = self.pose.y + rng * math.sin(ang)
@@ -187,22 +383,29 @@ class LiveMapper:
         pose_cell = self.world_to_grid(self.pose.x, self.pose.y)
         events: List[MapEvent] = []
         frame_cells: Set[Tuple[int, int]] = set()
+        strong_count = 0
+        weak_count = 0
 
         for obj_id, obj in tracked.items():
             label = obj.get("label", "other")
             if label not in ("person", "chair", "table", "sofa", "tv"):
                 continue
             (wx, wy), (gx, gy) = self.project_detection_to_world(obj, frame_shape)
+            conf = float(obj.get("confidence", 0.0))
+            is_persistent = self._is_persistent_detection(int(obj_id), str(label), (gx, gy))
+            strong_count += 1 if is_persistent else 0
+            weak_count += 0 if is_persistent else 1
             event = MapEvent(
                 event_type="obstacle_mark",
                 grid_xy=(gx, gy),
                 world_xy=(wx, wy),
                 label=label,
-                confidence=float(obj.get("confidence", 0.0)),
+                confidence=conf,
                 track_id=int(obj_id),
                 timestamp=float(timestamp),
             )
-            self.grid[gy, gx] = min(1.0, self.grid[gy, gx] + self.obstacle_increment)
+            inc = self._weighted_step(self.obstacle_increment, conf, strong=is_persistent)
+            self.grid[gy, gx] = min(1.0, self.grid[gy, gx] + inc)
             self._record_cell_event((gx, gy), "hit")
             frame_cells.add((gx, gy))
             events.append(event)
@@ -211,7 +414,8 @@ class LiveMapper:
             for cell_idx, (rx, ry) in enumerate(ray[:-1]):
                 if cell_idx % self.ray_step_cells != 0:
                     continue
-                self.grid[ry, rx] = max(0.0, self.grid[ry, rx] - self.free_decrement)
+                dec = self._weighted_step(self.free_decrement, conf, strong=is_persistent)
+                self.grid[ry, rx] = max(0.0, self.grid[ry, rx] - dec)
                 self._record_cell_event((rx, ry), "free")
                 events.append(
                     MapEvent(
@@ -219,7 +423,7 @@ class LiveMapper:
                         grid_xy=(rx, ry),
                         world_xy=self.grid_to_world(rx, ry),
                         label=label,
-                        confidence=float(obj.get("confidence", 0.0)),
+                        confidence=conf,
                         track_id=int(obj_id),
                         timestamp=float(timestamp),
                     )
@@ -227,19 +431,25 @@ class LiveMapper:
 
         self.frame_obstacles[int(frame_index)] = frame_cells
         self.map_events.extend(events)
+        self.last_frame_obstacle_counts = {"strong": int(strong_count), "weak": int(weak_count)}
         return events
 
     def render_map(self, out_size: int = 320) -> np.ndarray:
         occ = (self.grid * 255.0).astype(np.uint8)
         bgr = cv2.cvtColor(occ, cv2.COLOR_GRAY2BGR)
 
-        if len(self.pose_grid_history) > 1:
-            pts = np.array([[gx, gy] for gx, gy in self.pose_grid_history], dtype=np.int32)
+        if len(self.corrected_pose_grid_history) > 1:
+            pts = np.array([[gx, gy] for gx, gy in self.corrected_pose_grid_history], dtype=np.int32)
             pts[:, 0] = np.clip(pts[:, 0], 0, self.grid_size - 1)
             pts[:, 1] = np.clip(pts[:, 1], 0, self.grid_size - 1)
             cv2.polylines(bgr, [pts.reshape((-1, 1, 2))], False, (0, 255, 255), 1, cv2.LINE_AA)
+        if self.render_raw_trajectory and len(self.raw_pose_grid_history) > 1:
+            raw_pts = np.array([[gx, gy] for gx, gy in self.raw_pose_grid_history], dtype=np.int32)
+            raw_pts[:, 0] = np.clip(raw_pts[:, 0], 0, self.grid_size - 1)
+            raw_pts[:, 1] = np.clip(raw_pts[:, 1], 0, self.grid_size - 1)
+            cv2.polylines(bgr, [raw_pts.reshape((-1, 1, 2))], False, (255, 120, 0), 1, cv2.LINE_AA)
 
-        gx, gy = self.world_to_grid(self.pose.x, self.pose.y)
+        gx, gy = self.world_to_grid(self.corrected_pose.x, self.corrected_pose.y)
         cv2.circle(bgr, (gx, gy), 2, (0, 0, 255), -1)
 
         return cv2.resize(bgr, (out_size, out_size), interpolation=cv2.INTER_NEAREST)
@@ -251,7 +461,37 @@ class LiveMapper:
         for i in range(1, len(self.pose_history)):
             a, b = self.pose_history[i - 1], self.pose_history[i]
             dist += math.hypot(b.x - a.x, b.y - a.y)
-        return {"path_length_m": float(dist), "pose_samples": len(self.pose_history)}
+        corrected_dist = 0.0
+        for i in range(1, len(self.corrected_pose_history)):
+            a, b = self.corrected_pose_history[i - 1], self.corrected_pose_history[i]
+            corrected_dist += math.hypot(b.x - a.x, b.y - a.y)
+        return {
+            "path_length_m": float(dist),
+            "corrected_path_length_m": float(corrected_dist),
+            "pose_samples": len(self.pose_history),
+        }
+
+    def loop_closure_summary(self) -> dict:
+        if self.loop_closure_correction_records:
+            mean_t = float(np.mean([r["translation_m"] for r in self.loop_closure_correction_records]))
+            mean_h = float(np.mean([r["heading_rad"] for r in self.loop_closure_correction_records]))
+        else:
+            mean_t = 0.0
+            mean_h = 0.0
+        if self.post_closure_alignment_dists:
+            post_align = float(np.mean(self.post_closure_alignment_dists))
+        else:
+            post_align = 0.0
+        return {
+            "state": self.loop_closure_state,
+            "corrections_applied": int(self.loop_closure_corrections_applied),
+            "candidates": int(self.loop_closure_candidate_count),
+            "rejections": int(self.loop_closure_rejections),
+            "mean_correction_translation_m": mean_t,
+            "mean_correction_heading_rad": mean_h,
+            "post_closure_path_alignment_score": float(1.0 / (1.0 + post_align)),
+            "post_closure_path_alignment_mean_dist_m": post_align,
+        }
 
 
 def _micro_prf(tp: int, fp: int, fn: int) -> dict:
@@ -332,6 +572,117 @@ def compute_map_consistency_score(cell_event_counts: Dict[Tuple[int, int], Dict[
         "cell_count": len(scores),
         "score_mean": float(np.mean(scores)),
         "score_min": float(np.min(scores)),
+    }
+
+
+def compute_pose_jitter_score(poses: Sequence[PoseSample], min_motion_m: float = 0.002) -> dict:
+    if len(poses) < 4:
+        return {"available": False, "reason": "Insufficient pose samples"}
+    deltas_all = []
+    headings_all = []
+    for i in range(1, len(poses)):
+        a, b = poses[i - 1], poses[i]
+        deltas_all.append(math.hypot(b.x - a.x, b.y - a.y))
+        headings_all.append(normalize_angle(b.theta - a.theta))
+    delta_all_arr = np.array(deltas_all, dtype=np.float32)
+    moving_mask = delta_all_arr >= float(min_motion_m)
+    if int(np.sum(moving_mask)) < 3:
+        return {"available": False, "reason": "Insufficient moving pose deltas"}
+    delta_arr = delta_all_arr[moving_mask]
+    head_arr = np.array(headings_all, dtype=np.float32)[moving_mask]
+    motion_cv = float(np.std(delta_arr) / (float(np.mean(delta_arr)) + 1e-6))
+    heading_std = float(np.std(head_arr))
+    jitter_score = float(1.0 / (1.0 + motion_cv + heading_std))
+    return {
+        "available": True,
+        "moving_samples": int(delta_arr.size),
+        "total_samples": int(delta_all_arr.size),
+        "min_motion_m": float(min_motion_m),
+        "motion_cv": motion_cv,
+        "heading_std_rad": heading_std,
+        "jitter_score": jitter_score,
+    }
+
+
+def compute_obstacle_persistence_stability(frame_obstacles: Dict[int, Set[Tuple[int, int]]]) -> dict:
+    frames = sorted(frame_obstacles.keys())
+    if len(frames) < 3:
+        return {"available": False, "reason": "Insufficient obstacle frames"}
+    ious = []
+    for i in range(1, len(frames)):
+        prev_set = frame_obstacles.get(frames[i - 1], set())
+        cur_set = frame_obstacles.get(frames[i], set())
+        union = prev_set | cur_set
+        if not union:
+            continue
+        iou = float(len(prev_set & cur_set)) / float(len(union))
+        ious.append(iou)
+    if not ious:
+        return {"available": False, "reason": "No obstacle overlap samples"}
+    return {
+        "available": True,
+        "samples": len(ious),
+        "iou_mean": float(np.mean(ious)),
+        "iou_min": float(np.min(ious)),
+    }
+
+
+def compute_occupancy_confidence_concentration(grid: np.ndarray) -> dict:
+    if grid is None or grid.size == 0:
+        return {"available": False, "reason": "Empty occupancy grid"}
+    occ = np.clip(grid.astype(np.float32), 1e-6, 1.0 - 1e-6)
+    entropy = -(occ * np.log(occ) + (1.0 - occ) * np.log(1.0 - occ))
+    norm_entropy = float(np.mean(entropy) / math.log(2.0))
+    concentration = float(1.0 - norm_entropy)
+    return {
+        "available": True,
+        "entropy_mean_bits": float(np.mean(entropy) / math.log(2.0)),
+        "concentration_score": concentration,
+    }
+
+
+def compute_mapping_quality_summary(
+    loop_closure_drift: dict,
+    map_consistency_score: dict,
+    pose_jitter: dict,
+    obstacle_persistence: dict,
+    occupancy_concentration: dict,
+    obstacle_precision_recall: dict,
+    require_benchmark: bool = True,
+    threshold_overrides: Optional[Dict[str, float]] = None,
+) -> dict:
+    thresholds = {
+        "map_consistency_min": 0.70,
+        "pose_jitter_min": 0.40,
+        "obstacle_persistence_iou_min": 0.20,
+        "occupancy_concentration_min": 0.08,
+        "benchmark_obstacle_f1_min": 0.45,
+    }
+    if threshold_overrides:
+        for key, value in threshold_overrides.items():
+            if key in thresholds:
+                thresholds[key] = float(value)
+    checks = {}
+    checks["map_consistency"] = bool(map_consistency_score.get("available")) and float(map_consistency_score.get("score_mean", 0.0)) >= thresholds["map_consistency_min"]
+    checks["pose_jitter"] = bool(pose_jitter.get("available")) and float(pose_jitter.get("jitter_score", 0.0)) >= thresholds["pose_jitter_min"]
+    checks["obstacle_persistence"] = bool(obstacle_persistence.get("available")) and float(obstacle_persistence.get("iou_mean", 0.0)) >= thresholds["obstacle_persistence_iou_min"]
+    checks["occupancy_concentration"] = bool(occupancy_concentration.get("available")) and float(occupancy_concentration.get("concentration_score", 0.0)) >= thresholds["occupancy_concentration_min"]
+    if require_benchmark:
+        checks["benchmark_obstacle_f1"] = bool(obstacle_precision_recall.get("available")) and float(obstacle_precision_recall.get("f1", 0.0)) >= thresholds["benchmark_obstacle_f1_min"]
+    else:
+        checks["benchmark_obstacle_f1"] = True
+    missing_benchmark = require_benchmark and not bool(obstacle_precision_recall.get("available"))
+    promotable = all(checks.values()) and not missing_benchmark
+    lane = "benchmark_supervised" if bool(obstacle_precision_recall.get("available")) else "live_unsupervised"
+    status = "promotable" if promotable else ("insufficient_evidence" if missing_benchmark else "not_promotable")
+    return {
+        "lane": lane,
+        "status": status,
+        "promotable": bool(promotable),
+        "require_benchmark": bool(require_benchmark),
+        "thresholds": thresholds,
+        "checks": checks,
+        "missing_benchmark": bool(missing_benchmark),
     }
 
 
