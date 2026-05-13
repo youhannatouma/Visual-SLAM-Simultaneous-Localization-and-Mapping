@@ -43,3 +43,8 @@ models/exp_*.pt
 # Local virtualenvs and local install files
 .venv*/
 requirements.local.txt
+
+# Local calibration/artifact files
+calibration/
+data/annotations/IMG_2263_gt.json
+data/annotations/benchmark_room1_gt.json
