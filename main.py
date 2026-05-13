@@ -17,6 +17,7 @@ from mapping_runtime import (
     compute_loop_closure_drift,
     compute_map_consistency_score,
     compute_mapping_quality_summary,
+    compute_obstacle_object_precision_recall,
     compute_obstacle_persistence_stability,
     compute_obstacle_precision_recall,
     compute_occupancy_confidence_concentration,
@@ -48,7 +49,7 @@ class SharedState:
 state = SharedState()
 
 
-def detection_worker(model_path="yolov8n.pt"):
+def detection_worker(model_path="yolov8n.pt", det_confidence=0.25, det_imgsz=320):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[Detection] Running on: {device.upper()}")
     model = YOLO(model_path)
@@ -63,7 +64,7 @@ def detection_worker(model_path="yolov8n.pt"):
             time.sleep(0.01)
             continue
 
-        results = model(frame, imgsz=320, verbose=False, device=device)
+        results = model(frame, imgsz=int(det_imgsz), conf=float(det_confidence), verbose=False, device=device)
         dets = []
         for r in results:
             for box in r.boxes:
@@ -225,6 +226,10 @@ def parse_args():
     p.add_argument("--camera", type=int, default=0, help="Webcam device index.")
     p.add_argument("--loop", action="store_true", help="Loop video file.")
     p.add_argument("--no-depth", action="store_true", help="Disable MiDaS depth estimation.")
+    p.add_argument("--headless", action="store_true", help="Run without OpenCV display windows.")
+    p.add_argument("--max-frames", type=int, default=0, help="Stop after N frames; 0 processes the full source.")
+    p.add_argument("--det-confidence", type=float, default=0.25, help="YOLO confidence threshold for runtime detections.")
+    p.add_argument("--det-imgsz", type=int, default=320, help="YOLO inference image size.")
 
     p.add_argument("--no-mapping", action="store_true", help="Disable live occupancy-grid mapping.")
     p.add_argument("--camera-calibration", default="", help="Optional JSON camera calibration with fx, fy, cx, cy or camera_matrix.")
@@ -249,6 +254,9 @@ def parse_args():
     p.add_argument("--no-map-confidence-weighting", action="store_false", dest="map_confidence_weighting", help="Disable confidence-weighted occupancy updates.")
     p.add_argument("--map-confidence-strength", type=float, default=1.0, help="Exponent controlling confidence-weighting strength.")
     p.add_argument("--map-obstacle-persistence-frames", type=int, default=2, help="Frames required for strong obstacle reinforcement.")
+    p.add_argument("--map-obstacle-footprint-radius-cells", type=int, default=0, help="Mark a square obstacle footprint around each projected detection cell.")
+    p.add_argument("--map-obstacle-footprint-shape", choices=["square", "horizontal", "vertical", "cross", "class_aware"], default="square", help="Shape used when marking obstacle footprint cells.")
+    p.add_argument("--map-obstacle-temporal-persistence-frames", type=int, default=0, help="Keep recently detected obstacle cells active in frame_obstacles for this many frames.")
     p.add_argument("--map-loop-closure-enabled", action="store_true", default=True, help="Enable lightweight loop-closure snap-back.")
     p.add_argument("--no-map-loop-closure-enabled", action="store_false", dest="map_loop_closure_enabled", help="Disable loop-closure snap-back.")
     p.add_argument("--map-loop-closure-radius-m", type=float, default=0.25, help="Revisit radius for loop-closure candidates.")
@@ -261,6 +269,8 @@ def parse_args():
     p.add_argument("--no-map-require-benchmark-for-promotion", action="store_false", dest="map_require_benchmark_for_promotion", help="Allow unsupervised lane to be promotable.")
     p.add_argument("--map-gate-pose-jitter-min", type=float, default=0.40, help="Minimum pose jitter score gate.")
     p.add_argument("--map-gate-benchmark-f1-min", type=float, default=0.45, help="Minimum obstacle F1 gate in benchmark lane.")
+    p.add_argument("--map-obstacle-match-radius-cells", type=int, default=0, help="Cell radius for benchmark obstacle matching; 0 requires exact grid-cell matches.")
+    p.add_argument("--map-benchmark-obstacle-metric", choices=["cell", "object"], default="cell", help="Obstacle metric used for mapping quality gates.")
 
     p.add_argument(
         "--run-annotations",
@@ -335,6 +345,9 @@ def main():
             confidence_weighting=args.map_confidence_weighting,
             confidence_strength=args.map_confidence_strength,
             obstacle_persistence_frames=args.map_obstacle_persistence_frames,
+            obstacle_footprint_radius_cells=args.map_obstacle_footprint_radius_cells,
+            obstacle_footprint_shape=args.map_obstacle_footprint_shape,
+            obstacle_temporal_persistence_frames=args.map_obstacle_temporal_persistence_frames,
             loop_closure_enabled=args.map_loop_closure_enabled,
             loop_closure_radius_m=args.map_loop_closure_radius_m,
             loop_closure_min_frame_gap=args.map_loop_closure_min_frame_gap,
@@ -380,7 +393,11 @@ def main():
     fps_t0 = time.time()
     fps_count = 0
 
-    threading.Thread(target=detection_worker, daemon=True).start()
+    threading.Thread(
+        target=detection_worker,
+        kwargs={"det_confidence": args.det_confidence, "det_imgsz": args.det_imgsz},
+        daemon=True,
+    ).start()
     threading.Thread(target=reasoning_worker, daemon=True).start()
 
     print(f"[Main] Source: {source_label}")
@@ -540,37 +557,45 @@ def main():
 
         draw_text(out, "ESC:exit  M:toggle  A/C/T/E:label", (178, 472), (100, 100, 100), 0.38)
 
-        cv2.imshow("AI Visual Navigation System", out)
-        if use_mapping and mapper is not None:
-            cv2.imshow("Occupancy Map", mapper.render_map(out_size=300))
-        if use_depth:
-            cv2.imshow("Depth Map", depth_colored)
+        if not args.headless:
+            cv2.imshow("AI Visual Navigation System", out)
+            if use_mapping and mapper is not None:
+                cv2.imshow("Occupancy Map", mapper.render_map(out_size=300))
+            if use_depth:
+                cv2.imshow("Depth Map", depth_colored)
 
-        key = cv2.waitKey(frame_delay) & 0xFF
-        if key == 27:
+            key = cv2.waitKey(frame_delay) & 0xFF
+            if key == 27:
+                state.running = False
+                break
+            elif key == ord("m"):
+                with state.lock:
+                    state.use_model = not state.use_model
+                label_msg = f"Switched to: {'AI MODEL' if state.use_model else 'RULE-BASED'}"
+                label_color = C_CYAN
+                label_timer = time.time()
+            elif key in [ord("a"), ord("c"), ord("t"), ord("e")]:
+                lmap = {ord("a"): "AVOID_PERSON", ord("c"): "MOVE_TO_CHAIR", ord("t"): "CHECK_TABLE", ord("e"): "EXPLORE"}
+                action = lmap[key]
+                logger = ReasoningEngine()
+                ok = logger.log_example(snap_dets, (320, 240), 640 * 480, motion_text, action, session_csv)
+                if ok:
+                    label_msg = f"[OK]  Saved: {action}"
+                    label_color = C_GREEN
+                else:
+                    label_msg = "[X]  Rejected — low confidence"
+                    label_color = C_ORANGE
+                label_timer = time.time()
+
+        if args.max_frames and frame_idx >= int(args.max_frames):
+            print(f"[Main] Reached max frames: {args.max_frames}")
             state.running = False
             break
-        elif key == ord("m"):
-            with state.lock:
-                state.use_model = not state.use_model
-            label_msg = f"Switched to: {'AI MODEL' if state.use_model else 'RULE-BASED'}"
-            label_color = C_CYAN
-            label_timer = time.time()
-        elif key in [ord("a"), ord("c"), ord("t"), ord("e")]:
-            lmap = {ord("a"): "AVOID_PERSON", ord("c"): "MOVE_TO_CHAIR", ord("t"): "CHECK_TABLE", ord("e"): "EXPLORE"}
-            action = lmap[key]
-            logger = ReasoningEngine()
-            ok = logger.log_example(snap_dets, (320, 240), 640 * 480, motion_text, action, session_csv)
-            if ok:
-                label_msg = f"[OK]  Saved: {action}"
-                label_color = C_GREEN
-            else:
-                label_msg = "[X]  Rejected — low confidence"
-                label_color = C_ORANGE
-            label_timer = time.time()
 
     cap.release()
-    cv2.destroyAllWindows()
+    if not args.headless:
+        cv2.destroyAllWindows()
+    state.running = False
 
     run_end_ts = time.time()
     if run_annotations.get("available", False):
@@ -578,11 +603,18 @@ def main():
         obstacle_pr = compute_obstacle_precision_recall(
             run_annotations.get("obstacles_by_frame", {}),
             mapper.frame_obstacles if mapper is not None else {},
+            match_radius_cells=args.map_obstacle_match_radius_cells,
+        )
+        obstacle_object_pr = compute_obstacle_object_precision_recall(
+            run_annotations.get("obstacles_by_frame", {}),
+            mapper.frame_obstacles if mapper is not None else {},
+            match_radius_cells=args.map_obstacle_match_radius_cells,
         )
     else:
         reason = run_annotations.get("reason", "No annotation file provided")
         label_metrics = {"available": False, "reason": reason}
         obstacle_pr = {"available": False, "reason": reason}
+        obstacle_object_pr = {"available": False, "reason": reason}
 
     if mapper is not None:
         loop_closure = compute_loop_closure_drift(mapper.pose_history)
@@ -592,13 +624,14 @@ def main():
         obstacle_persistence = compute_obstacle_persistence_stability(mapper.frame_obstacles)
         occupancy_confidence = compute_occupancy_confidence_concentration(mapper.grid)
         lc_summary = mapper.loop_closure_summary()
+        benchmark_obstacle_pr = obstacle_object_pr if args.map_benchmark_obstacle_metric == "object" else obstacle_pr
         mapping_quality_summary = compute_mapping_quality_summary(
             loop_closure_drift=loop_closure,
             map_consistency_score=consistency,
             pose_jitter=pose_jitter,
             obstacle_persistence=obstacle_persistence,
             occupancy_concentration=occupancy_confidence,
-            obstacle_precision_recall=obstacle_pr,
+            obstacle_precision_recall=benchmark_obstacle_pr,
             require_benchmark=bool(args.map_require_benchmark_for_promotion),
             threshold_overrides={
                 "pose_jitter_min": float(args.map_gate_pose_jitter_min),
@@ -623,6 +656,8 @@ def main():
             "obstacle_persistence_stability": obstacle_persistence,
             "occupancy_confidence_concentration": occupancy_confidence,
             "obstacle_precision_recall": obstacle_pr,
+            "obstacle_object_precision_recall": obstacle_object_pr,
+            "benchmark_obstacle_metric": args.map_benchmark_obstacle_metric,
             "loop_closure_corrections_applied": lc_summary.get("corrections_applied", 0),
             "mean_correction_translation_m": lc_summary.get("mean_correction_translation_m", 0.0),
             "mean_correction_heading_rad": lc_summary.get("mean_correction_heading_rad", 0.0),
@@ -642,6 +677,7 @@ def main():
             "obstacle_persistence_stability": {"available": False, "reason": "Mapping disabled"},
             "occupancy_confidence_concentration": {"available": False, "reason": "Mapping disabled"},
             "obstacle_precision_recall": obstacle_pr,
+            "obstacle_object_precision_recall": obstacle_object_pr,
             "mapping_quality_summary": {
                 "lane": "mapping_disabled",
                 "status": "not_available",
@@ -662,6 +698,10 @@ def main():
             "camera": args.camera,
             "use_depth": bool(use_depth),
             "use_mapping": bool(use_mapping),
+            "headless": bool(args.headless),
+            "max_frames": int(args.max_frames),
+            "det_confidence": float(args.det_confidence),
+            "det_imgsz": int(args.det_imgsz),
             "benchmark_video": args.benchmark_video,
             "camera_calibration": args.camera_calibration,
             "mapping_backend": args.mapping_backend,
@@ -685,6 +725,9 @@ def main():
             "map_confidence_weighting": bool(args.map_confidence_weighting),
             "map_confidence_strength": float(args.map_confidence_strength),
             "map_obstacle_persistence_frames": int(args.map_obstacle_persistence_frames),
+            "map_obstacle_footprint_radius_cells": int(args.map_obstacle_footprint_radius_cells),
+            "map_obstacle_footprint_shape": args.map_obstacle_footprint_shape,
+            "map_obstacle_temporal_persistence_frames": int(args.map_obstacle_temporal_persistence_frames),
             "map_loop_closure_enabled": bool(args.map_loop_closure_enabled),
             "map_loop_closure_radius_m": float(args.map_loop_closure_radius_m),
             "map_loop_closure_min_frame_gap": int(args.map_loop_closure_min_frame_gap),
@@ -695,6 +738,8 @@ def main():
             "map_require_benchmark_for_promotion": bool(args.map_require_benchmark_for_promotion),
             "map_gate_pose_jitter_min": float(args.map_gate_pose_jitter_min),
             "map_gate_benchmark_f1_min": float(args.map_gate_benchmark_f1_min),
+            "map_obstacle_match_radius_cells": int(args.map_obstacle_match_radius_cells),
+            "map_benchmark_obstacle_metric": args.map_benchmark_obstacle_metric,
             "annotations_path": annotations_path,
         },
         "timing": {

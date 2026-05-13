@@ -10,6 +10,8 @@ from mapping_runtime import (
     compute_loop_closure_drift,
     compute_map_consistency_score,
     compute_mapping_quality_summary,
+    compute_obstacle_object_precision_recall,
+    compute_obstacle_precision_recall,
     compute_obstacle_persistence_stability,
     compute_occupancy_confidence_concentration,
     compute_pose_jitter_score,
@@ -96,6 +98,49 @@ class MappingRuntimeTests(unittest.TestCase):
         mapper.update_from_tracked(tracked, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
         self.assertTrue(len(mapper.frame_obstacles.get(1, set())) >= 1)
         self.assertTrue(any(v.get("free", 0) > 0 for v in mapper.cell_event_counts.values()))
+
+    def test_obstacle_footprint_marks_square_neighbor_cells(self):
+        mapper = LiveMapper(
+            grid_size=50,
+            meters_per_cell=0.1,
+            obstacle_footprint_radius_cells=1,
+            obstacle_footprint_shape="square",
+            confidence_weighting=False,
+        )
+        tracked = {1: {"label": "chair", "confidence": 0.95, "center": (320, 240), "area": 12000}}
+        events = mapper.update_from_tracked(tracked, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
+        obstacle_events = [e for e in events if e.event_type == "obstacle_mark"]
+
+        self.assertEqual(len(mapper.frame_obstacles[1]), 9)
+        self.assertEqual(len(obstacle_events), 9)
+        self.assertTrue(all(0 <= gx < mapper.grid_size and 0 <= gy < mapper.grid_size for gx, gy in mapper.frame_obstacles[1]))
+
+    def test_obstacle_footprint_shapes(self):
+        mapper = LiveMapper(grid_size=50, meters_per_cell=0.1, obstacle_footprint_radius_cells=1, obstacle_footprint_shape="horizontal")
+        self.assertEqual(len(mapper._obstacle_footprint_cells((25, 25), label="table")), 3)
+
+        mapper = LiveMapper(grid_size=50, meters_per_cell=0.1, obstacle_footprint_radius_cells=1, obstacle_footprint_shape="cross")
+        self.assertEqual(len(mapper._obstacle_footprint_cells((25, 25), label="chair")), 5)
+
+        mapper = LiveMapper(grid_size=50, meters_per_cell=0.1, obstacle_footprint_radius_cells=1, obstacle_footprint_shape="class_aware")
+        self.assertEqual(len(mapper._obstacle_footprint_cells((25, 25), label="chair")), 5)
+        self.assertEqual(len(mapper._obstacle_footprint_cells((25, 25), label="table")), 3)
+        self.assertEqual(len(mapper._obstacle_footprint_cells((25, 25), label="person")), 3)
+
+    def test_temporal_obstacle_persistence_keeps_recent_cells_active(self):
+        mapper = LiveMapper(
+            grid_size=50,
+            meters_per_cell=0.1,
+            obstacle_temporal_persistence_frames=2,
+            confidence_weighting=False,
+        )
+        tracked = {1: {"label": "chair", "confidence": 0.95, "center": (320, 240), "area": 12000}}
+        mapper.update_from_tracked(tracked, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
+        first_cells = set(mapper.frame_obstacles[1])
+        self.assertGreater(len(first_cells), 0)
+
+        mapper.update_from_tracked({}, frame_shape=(480, 640, 3), frame_index=2, timestamp=2.0)
+        self.assertEqual(mapper.frame_obstacles[2], first_cells)
 
     def test_loop_closure_metric_detects_pairs(self):
         poses = [
@@ -202,6 +247,36 @@ class MappingRuntimeTests(unittest.TestCase):
         self.assertTrue(ann["available"])
         self.assertEqual(len(ann["frame_labels"]), 2)
         self.assertGreaterEqual(len(ann["obstacles_by_frame"]), 2)
+
+    def test_obstacle_precision_recall_exact_and_radius_matching(self):
+        gt = {1: {(10, 10), (20, 20)}}
+        pred = {1: {(11, 10), (30, 30)}}
+
+        exact = compute_obstacle_precision_recall(gt, pred, match_radius_cells=0)
+        self.assertTrue(exact["available"])
+        self.assertEqual(exact["tp"], 0)
+        self.assertEqual(exact["fp"], 2)
+        self.assertEqual(exact["fn"], 2)
+        self.assertEqual(exact["match_radius_cells"], 0)
+
+        tolerant = compute_obstacle_precision_recall(gt, pred, match_radius_cells=1)
+        self.assertTrue(tolerant["available"])
+        self.assertEqual(tolerant["tp"], 1)
+        self.assertEqual(tolerant["fp"], 1)
+        self.assertEqual(tolerant["fn"], 1)
+        self.assertGreater(tolerant["f1"], exact["f1"])
+        self.assertEqual(tolerant["match_radius_cells"], 1)
+
+    def test_obstacle_object_precision_recall_scores_components(self):
+        gt = {1: {(10, 10), (10, 11), (11, 10), (30, 30), (30, 31)}}
+        pred = {1: {(10, 10), (30, 31), (45, 45)}}
+
+        out = compute_obstacle_object_precision_recall(gt, pred)
+        self.assertTrue(out["available"])
+        self.assertEqual(out["tp"], 2)
+        self.assertEqual(out["fp"], 1)
+        self.assertEqual(out["fn"], 0)
+        self.assertEqual(out["metric"], "object_components")
 
     def test_promotion_status_variants(self):
         base = {

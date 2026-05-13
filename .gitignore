@@ -21,6 +21,7 @@ Thumbs.db
 
 # Generated datasets, reports, and runtime outputs.
 # Keep promoted snapshots and small fixtures by force-adding them intentionally.
+videos/
 data/processed*/
 data/raw/session_*.csv
 data/raw/autolabel_*.csv

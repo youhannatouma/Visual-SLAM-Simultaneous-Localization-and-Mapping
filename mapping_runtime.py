@@ -137,6 +137,9 @@ class LiveMapper:
         confidence_weighting: bool = True,
         confidence_strength: float = 1.0,
         obstacle_persistence_frames: int = 2,
+        obstacle_footprint_radius_cells: int = 0,
+        obstacle_footprint_shape: str = "square",
+        obstacle_temporal_persistence_frames: int = 0,
         loop_closure_enabled: bool = True,
         loop_closure_radius_m: float = 0.25,
         loop_closure_min_frame_gap: int = 80,
@@ -164,6 +167,11 @@ class LiveMapper:
         self.confidence_weighting = bool(confidence_weighting)
         self.confidence_strength = max(0.0, float(confidence_strength))
         self.obstacle_persistence_frames = max(1, int(obstacle_persistence_frames))
+        self.obstacle_footprint_radius_cells = max(0, int(obstacle_footprint_radius_cells))
+        self.obstacle_footprint_shape = str(obstacle_footprint_shape)
+        if self.obstacle_footprint_shape not in ("square", "horizontal", "vertical", "cross", "class_aware"):
+            raise ValueError("obstacle_footprint_shape must be one of: square, horizontal, vertical, cross, class_aware")
+        self.obstacle_temporal_persistence_frames = max(0, int(obstacle_temporal_persistence_frames))
         self.loop_closure_enabled = bool(loop_closure_enabled)
         self.loop_closure_radius_m = max(0.05, float(loop_closure_radius_m))
         self.loop_closure_min_frame_gap = max(10, int(loop_closure_min_frame_gap))
@@ -199,6 +207,7 @@ class LiveMapper:
         self.cell_event_counts: Dict[Tuple[int, int], Dict[str, int]] = {}
         self.pose_delta_history: deque = deque(maxlen=self.pose_smoothing_window)
         self.detection_cell_history: Dict[Tuple[str, int], deque] = {}
+        self.temporal_obstacle_history: deque = deque(maxlen=self.obstacle_temporal_persistence_frames)
         self.last_frame_obstacle_counts = {"strong": 0, "weak": 0}
         self.frame_counter = 0
         self.loop_closure_state = "idle"
@@ -504,6 +513,36 @@ class LiveMapper:
         row = self.cell_event_counts.setdefault(cell, {"hit": 0, "free": 0})
         row[key] = row.get(key, 0) + 1
 
+    def _obstacle_footprint_cells(self, center: Tuple[int, int], label: str = "") -> List[Tuple[int, int]]:
+        cx, cy = center
+        radius = self.obstacle_footprint_radius_cells
+        shape = self.obstacle_footprint_shape
+        if shape == "class_aware":
+            if label == "person":
+                shape = "vertical"
+            elif label in ("table", "sofa", "tv"):
+                shape = "horizontal"
+            elif label == "chair":
+                shape = "cross"
+            else:
+                shape = "square"
+
+        cells = []
+        for gy in range(cy - radius, cy + radius + 1):
+            if gy < 0 or gy >= self.grid_size:
+                continue
+            for gx in range(cx - radius, cx + radius + 1):
+                if gx < 0 or gx >= self.grid_size:
+                    continue
+                if shape == "horizontal" and gy != cy:
+                    continue
+                if shape == "vertical" and gx != cx:
+                    continue
+                if shape == "cross" and gx != cx and gy != cy:
+                    continue
+                cells.append((gx, gy))
+        return cells
+
     def update_from_tracked(
         self,
         tracked: Dict[int, dict],
@@ -528,20 +567,23 @@ class LiveMapper:
             is_persistent = self._is_persistent_detection(int(obj_id), str(label), (gx, gy))
             strong_count += 1 if is_persistent else 0
             weak_count += 0 if is_persistent else 1
-            event = MapEvent(
-                event_type="obstacle_mark",
-                grid_xy=(gx, gy),
-                world_xy=(wx, wy),
-                label=label,
-                confidence=conf,
-                track_id=int(obj_id),
-                timestamp=float(timestamp),
-            )
             inc = self._weighted_step(self.obstacle_increment, conf, strong=is_persistent)
-            self.grid[gy, gx] = min(1.0, self.grid[gy, gx] + inc)
-            self._record_cell_event((gx, gy), "hit")
-            frame_cells.add((gx, gy))
-            events.append(event)
+            for cell in self._obstacle_footprint_cells((gx, gy), label=str(label)):
+                cell_x, cell_y = cell
+                self.grid[cell_y, cell_x] = min(1.0, self.grid[cell_y, cell_x] + inc)
+                self._record_cell_event(cell, "hit")
+                frame_cells.add(cell)
+                events.append(
+                    MapEvent(
+                        event_type="obstacle_mark",
+                        grid_xy=cell,
+                        world_xy=self.grid_to_world(cell_x, cell_y),
+                        label=label,
+                        confidence=conf,
+                        track_id=int(obj_id),
+                        timestamp=float(timestamp),
+                    )
+                )
 
             ray = self._ray_cells(pose_cell, (gx, gy))
             for cell_idx, (rx, ry) in enumerate(ray[:-1]):
@@ -561,6 +603,12 @@ class LiveMapper:
                         timestamp=float(timestamp),
                     )
                 )
+
+        current_frame_cells = set(frame_cells)
+        if self.obstacle_temporal_persistence_frames > 0:
+            for past_cells in self.temporal_obstacle_history:
+                frame_cells.update(past_cells)
+            self.temporal_obstacle_history.append(current_frame_cells)
 
         self.frame_obstacles[int(frame_index)] = frame_cells
         self.map_events.extend(events)
@@ -831,19 +879,107 @@ def compute_mapping_quality_summary(
 def compute_obstacle_precision_recall(
     gt_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
     pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
+    match_radius_cells: int = 0,
 ) -> dict:
     frames = sorted(set(gt_obstacles_by_frame.keys()) & set(pred_obstacles_by_frame.keys()))
     if not frames:
         return {"available": False, "reason": "No overlapping obstacle frames"}
+    radius = max(0, int(match_radius_cells))
     tp = fp = fn = 0
     for f in frames:
         gt = gt_obstacles_by_frame.get(f, set())
         pred = pred_obstacles_by_frame.get(f, set())
-        tp += len(gt & pred)
-        fp += len(pred - gt)
-        fn += len(gt - pred)
+        if radius == 0:
+            frame_tp = len(gt & pred)
+            frame_fp = len(pred - gt)
+            frame_fn = len(gt - pred)
+        else:
+            unmatched_gt = set(gt)
+            frame_tp = 0
+            for cell in sorted(pred):
+                if not unmatched_gt:
+                    break
+                nearest = min(
+                    unmatched_gt,
+                    key=lambda g: (max(abs(cell[0] - g[0]), abs(cell[1] - g[1])), abs(cell[0] - g[0]) + abs(cell[1] - g[1])),
+                )
+                if max(abs(cell[0] - nearest[0]), abs(cell[1] - nearest[1])) <= radius:
+                    unmatched_gt.remove(nearest)
+                    frame_tp += 1
+            frame_fp = max(0, len(pred) - frame_tp)
+            frame_fn = len(unmatched_gt)
+        tp += frame_tp
+        fp += frame_fp
+        fn += frame_fn
     out = _micro_prf(tp, fp, fn)
-    out.update({"available": True, "frames_evaluated": len(frames)})
+    out.update({"available": True, "frames_evaluated": len(frames), "match_radius_cells": radius})
+    return out
+
+
+def _connected_cell_components(cells: Set[Tuple[int, int]]) -> List[Set[Tuple[int, int]]]:
+    remaining = set(cells)
+    components = []
+    while remaining:
+        start = remaining.pop()
+        component = {start}
+        queue = deque([start])
+        while queue:
+            x, y = queue.popleft()
+            for nx in range(x - 1, x + 2):
+                for ny in range(y - 1, y + 2):
+                    cell = (nx, ny)
+                    if cell not in remaining:
+                        continue
+                    remaining.remove(cell)
+                    component.add(cell)
+                    queue.append(cell)
+        components.append(component)
+    return components
+
+
+def _component_distance(a: Set[Tuple[int, int]], b: Set[Tuple[int, int]]) -> int:
+    if not a or not b:
+        return 10**9
+    return min(max(abs(ax - bx), abs(ay - by)) for ax, ay in a for bx, by in b)
+
+
+def compute_obstacle_object_precision_recall(
+    gt_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
+    pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
+    match_radius_cells: int = 0,
+) -> dict:
+    frames = sorted(set(gt_obstacles_by_frame.keys()) & set(pred_obstacles_by_frame.keys()))
+    if not frames:
+        return {"available": False, "reason": "No overlapping obstacle frames"}
+    radius = max(0, int(match_radius_cells))
+    tp = fp = fn = 0
+    for f in frames:
+        gt_components = _connected_cell_components(gt_obstacles_by_frame.get(f, set()))
+        pred_components = _connected_cell_components(pred_obstacles_by_frame.get(f, set()))
+        matched_gt: Set[int] = set()
+        for pred_component in pred_components:
+            best = None
+            for idx, gt_component in enumerate(gt_components):
+                if idx in matched_gt:
+                    continue
+                distance = _component_distance(pred_component, gt_component)
+                if distance <= radius and (best is None or distance < best[0]):
+                    best = (distance, idx)
+            if best is None:
+                fp += 1
+            else:
+                matched_gt.add(best[1])
+                tp += 1
+        fn += max(0, len(gt_components) - len(matched_gt))
+    out = _micro_prf(tp, fp, fn)
+    out.update(
+        {
+            "available": True,
+            "frames_evaluated": len(frames),
+            "match_radius_cells": radius,
+            "metric": "object_components",
+        }
+    )
     return out
 
 

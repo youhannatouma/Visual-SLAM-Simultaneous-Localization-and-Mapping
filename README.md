@@ -73,12 +73,22 @@ Important mapping/evaluation flags:
 - `--benchmark-video <path>`
 - `--run-annotations <path>`
 - `--run-report-out <path>`
+- `--headless`
+- `--max-frames <n>`
+- `--det-confidence <float>`
+- `--det-imgsz <n>`
 - `--map-grid-size`
 - `--map-meters-per-cell`
 - `--pose-motion-to-meter-scale`
 - `--map-require-benchmark-for-promotion`
+- `--map-obstacle-match-radius-cells <n>`
+- `--map-benchmark-obstacle-metric cell|object`
+- `--map-obstacle-footprint-radius-cells <n>`
+- `--map-obstacle-footprint-shape square|horizontal|vertical|cross|class_aware`
+- `--map-obstacle-temporal-persistence-frames <n>`
 
 Reports keep the top-level fields `label_metrics`, `map_metrics`, `pose_stats`, `config`, `timing`, `warnings`, and `failures`.
+Obstacle reports include cell-level metrics plus object-component metrics. Use `--map-benchmark-obstacle-metric object` when annotations describe obstacle blobs but the mapper emits object center cells.
 
 ## Offline Video Tools
 
