@@ -60,3 +60,12 @@ requirements.local.txt
 calibration/
 data/annotations/IMG_2263_gt.json
 data/annotations/benchmark_room1_gt.json
+
+# Local tracked data/report artifacts that should stay out of commits.
+data/manifest/CHANGELOG.md
+data/manifest/dataset_manifest.json
+data/raw/media_labeled_stage2_train_refix_20260506.csv
+data/raw/move_recovery_pool_20260507.csv
+data/raw/zz_fresh_real_holdout_20260506.csv
+reports/artifact_budget.json
+reports/review_status/move_recovery_pool_20260507.json
