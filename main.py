@@ -516,7 +516,9 @@ def main():
             draw_motion_arrow(out, arrow)
 
         action_label = parse_action_label(snap_decision)
-        action_conf = action_confidence_from_tracked(action_label, snap_tracked)
+        tracked_action_conf = action_confidence_from_tracked(action_label, snap_tracked)
+        model_action_conf = float(getattr(engine, "last_model_confidence", 0.0)) if snap_mode else 0.0
+        action_conf = max(tracked_action_conf, model_action_conf)
         action_samples.append(
             ActionSample(
                 action=action_label,

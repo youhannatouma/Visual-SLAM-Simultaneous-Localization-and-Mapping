@@ -7,6 +7,7 @@ from collections import deque, Counter
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 LABEL_CLASSES = ["person", "chair", "table", "sofa", "tv", "other"]
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
@@ -14,6 +15,21 @@ MOTION_CLASSES = ["NONE", "LEFT", "RIGHT", "UP", "DOWN"]
 NUM_OBJECT_SLOTS = 3
 SEQUENCE_LENGTH = 10
 FEATURE_SIZE = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES) + 2 + len(LABEL_CLASSES)
+
+
+def load_reasoning_checkpoint(model_path, device):
+    payload = torch.load(model_path, map_location=device)
+    metadata = {}
+    if isinstance(payload, dict) and "model_state_dict" in payload:
+        metadata = {
+            "sequence_length": int(payload.get("sequence_length", SEQUENCE_LENGTH)),
+            "feature_size": int(payload.get("feature_size", FEATURE_SIZE)),
+            "action_classes": list(payload.get("action_classes", ACTION_CLASSES)),
+        }
+        return payload["model_state_dict"], metadata
+    if isinstance(payload, dict):
+        return payload, metadata
+    raise ValueError("Unsupported checkpoint format")
 
 
 # =============================================================================
@@ -77,6 +93,7 @@ class ReasoningEngine:
         # BBox Smoothing
         self.decision_history = deque(maxlen=10)
         self.action_history = deque(maxlen=8)
+        self.action_confidence_history = deque(maxlen=8)
         self.bbox_history = {}  # ID -> deque(maxlen=5)
 
         # =================================================================
@@ -102,6 +119,10 @@ class ReasoningEngine:
 
         self.model_path = model_path
         self.model = None
+        self.model_metadata = {}
+        self.min_model_confidence = 0.45
+        self.last_model_action = None
+        self.last_model_confidence = 0.0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.load_model()
 
@@ -109,14 +130,29 @@ class ReasoningEngine:
         if os.path.exists(self.model_path):
             try:
                 self.model = ReasoningMLP(FEATURE_SIZE, sequence_length=self.sequence_length).to(self.device)
-                self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+                state_dict, metadata = load_reasoning_checkpoint(self.model_path, self.device)
+                if metadata:
+                    ckpt_feature_size = int(metadata.get("feature_size", FEATURE_SIZE))
+                    ckpt_sequence_length = int(metadata.get("sequence_length", self.sequence_length))
+                    if ckpt_feature_size != FEATURE_SIZE:
+                        raise ValueError(
+                            f"checkpoint feature_size={ckpt_feature_size} does not match runtime feature_size={FEATURE_SIZE}"
+                        )
+                    if ckpt_sequence_length != self.sequence_length:
+                        raise ValueError(
+                            f"checkpoint sequence_length={ckpt_sequence_length} does not match runtime sequence_length={self.sequence_length}"
+                        )
+                self.model.load_state_dict(state_dict)
+                self.model_metadata = metadata
                 self.model.eval()
                 print(f"[ReasoningEngine] Loaded model from '{self.model_path}'")
             except Exception as e:
                 print(f"[ReasoningEngine] WARNING: Model incompatible ({e}). Using rule-based fallback.")
                 self.model = None
+                self.model_metadata = {}
         else:
             self.model = None
+            self.model_metadata = {}
 
     @staticmethod
     def label_to_onehot(label):
@@ -164,6 +200,9 @@ class ReasoningEngine:
     def reset_temporal_state(self):
         self.feature_history.clear()
         self.action_history.clear()
+        self.action_confidence_history.clear()
+        self.last_model_action = None
+        self.last_model_confidence = 0.0
 
     def track_objects(self, detections):
         updated = {}
@@ -339,7 +378,7 @@ class ReasoningEngine:
 
     def predict_action(self):
         if self.model is None or len(self.feature_history) < self.sequence_length:
-            return None
+            return None, 0.0
 
         self.model.eval()
         with torch.no_grad():
@@ -349,8 +388,20 @@ class ReasoningEngine:
                 device=self.device,
             ).unsqueeze(0)
             logits = self.model(tensor)
-            action_index = int(logits.argmax(dim=-1).item())
-            return self.index_to_action(action_index)
+            probs = F.softmax(logits, dim=-1)
+            action_index = int(probs.argmax(dim=-1).item())
+            action_conf = float(probs[0, action_index].item())
+            return self.index_to_action(action_index), action_conf
+
+    def _stable_model_action(self):
+        if not self.action_history:
+            return None, 0.0
+        scores = {}
+        for action, conf in zip(self.action_history, self.action_confidence_history):
+            scores[action] = scores.get(action, 0.0) + float(conf)
+        best_action = max(scores.items(), key=lambda item: (item[1], item[0]))[0]
+        avg_conf = scores[best_action] / max(1, sum(1 for action in self.action_history if action == best_action))
+        return best_action, float(avg_conf)
 
     def format_action(self, action, tracked, frame_center, frame_area):
         person = next((obj for obj in tracked.values() if obj["label"] == "person"), None)
@@ -449,12 +500,18 @@ class ReasoningEngine:
         )
         self.feature_history.append(features)
         
+        self.last_model_action = None
+        self.last_model_confidence = 0.0
         if use_model and self.model is not None:
-            action = self.predict_action()
+            action, action_conf = self.predict_action()
+            self.last_model_action = action
+            self.last_model_confidence = float(action_conf)
 
-            if action is not None:
+            if action is not None and action_conf >= self.min_model_confidence:
                 self.action_history.append(action)
-                final_action = Counter(self.action_history).most_common(1)[0][0]
+                self.action_confidence_history.append(float(action_conf))
+                final_action, stable_conf = self._stable_model_action()
+                self.last_model_confidence = max(self.last_model_confidence, stable_conf)
 
                 raw_decision = self.format_action(
                     final_action,

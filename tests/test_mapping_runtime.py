@@ -36,6 +36,15 @@ class MappingRuntimeTests(unittest.TestCase):
         self.assertLess(gx, 30)
         self.assertLess(gy, 30)
 
+    def test_projection_uses_corrected_pose_when_loop_closure_enabled(self):
+        mapper = LiveMapper(grid_size=80, meters_per_cell=0.1, loop_closure_enabled=True)
+        mapper.pose = PoseSample(5.0, 5.0, 0.0, 1.0)
+        mapper.corrected_pose = PoseSample(2.0, 3.0, 0.0, 1.0)
+        det = {"center": (320, 240), "area": 12000, "confidence": 0.9, "label": "chair"}
+        (wx, wy), _ = mapper.project_detection_to_world(det, (480, 640, 3))
+        self.assertLess(abs(wx - mapper.corrected_pose.x), abs(wx - mapper.pose.x))
+        self.assertLess(abs(wy - mapper.corrected_pose.y), abs(wy - mapper.pose.y))
+
     def test_gitignore_has_no_conflict_markers(self):
         gitignore = Path(__file__).resolve().parents[1] / ".gitignore"
         text = gitignore.read_text(encoding="utf-8")

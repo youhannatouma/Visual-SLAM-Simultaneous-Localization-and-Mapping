@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from reasoning import ACTION_CLASSES, FEATURE_SIZE, ReasoningMLP, SEQUENCE_LENGTH
+from reasoning import ACTION_CLASSES, FEATURE_SIZE, ReasoningMLP, SEQUENCE_LENGTH, load_reasoning_checkpoint
 
 
 def load_clean_frame_with_df(csv_path):
@@ -148,7 +148,8 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ReasoningMLP(features.shape[1], sequence_length=args.sequence_length).to(device)
-    model.load_state_dict(torch.load(args.model, map_location=device))
+    state_dict, _ = load_reasoning_checkpoint(args.model, device)
+    model.load_state_dict(state_dict)
 
     preds, pred_probs, all_probs = predict_batches(
         model, sequences, args.batch_size, device

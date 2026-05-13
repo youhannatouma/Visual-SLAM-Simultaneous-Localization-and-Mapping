@@ -286,7 +286,15 @@ def train(
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    torch.save(model.state_dict(), model_path)
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "sequence_length": int(SEQUENCE_LENGTH),
+        "feature_size": int(train_dataset.feature_size),
+        "action_classes": list(ACTION_CLASSES),
+        "model_algorithm": "mlp",
+        "seed": int(seed),
+    }
+    torch.save(checkpoint, model_path)
     print(f"Saved best model to {model_path}")
 
     test_acc, y_true, y_pred = evaluate_model(model, test_dataset, batch_size, device)

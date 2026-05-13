@@ -270,3 +270,49 @@ Validation:
 - `py_compile` passed for `main.py`, `mapping_runtime.py`, and tests.
 - Unit tests added and passing via discovery:
   - `tests/test_mapping_runtime.py`
+
+---
+
+## Update (2026-05-13) - Runtime Hardening + Mapping Correction Alignment
+
+Implemented:
+- Hardened reasoning-model checkpoint loading in `reasoning.py` so runtime now accepts:
+  - legacy plain `state_dict` checkpoints
+  - metadata-bearing checkpoints with `model_state_dict`, `sequence_length`, and `feature_size`
+- Updated `train_reasoning.py` to save metadata-bearing checkpoints by default, without breaking older runtime compatibility.
+- Updated `scripts/triage_reasoning_confusions.py` to use the same shared checkpoint loader as runtime.
+- Added confidence-aware model stabilization in `ReasoningEngine`:
+  - model predictions now carry softmax confidence
+  - low-confidence model outputs do not enter the stabilized action vote
+  - runtime action confidence now reflects the stronger of scene-supported confidence and model confidence
+- Fixed a mapping/runtime consistency bug in `mapping_runtime.py`:
+  - obstacle projection and free-space ray carving now use the corrected loop-closure pose instead of the raw drifting pose
+  - this aligns occupancy updates with the loop-closure-corrected trajectory already used for render/evaluation
+- Expanded `.gitignore` for local-only artifacts and review outputs:
+  - capture reports
+  - review CSVs / correction CSVs / correction audits
+  - tuning model directories
+  - local raw archive and candidate artifact directories
+
+Why this matters:
+- The reasoning path is now safer to retrain and redeploy without silent checkpoint-contract drift.
+- Mapping quality is now materially closer to what we would want to promote, because post-closure corrections affect both visualization and occupancy updates, not just the displayed trajectory.
+- Local review/debug artifacts are less likely to pollute future commits.
+
+Validation:
+- `python3 -m py_compile` passed for:
+  - `reasoning.py`
+  - `mapping_runtime.py`
+  - `main.py`
+  - `train_reasoning.py`
+  - `scripts/triage_reasoning_confusions.py`
+- Added/updated regression coverage:
+  - `tests/test_reasoning_contract.py`
+  - `tests/test_mapping_runtime.py`
+- Full test execution was partially blocked in the local shell because:
+  - `torch` is not installed in the active interpreter, so reasoning-contract tests were skipped
+  - `cv2` is not installed in the active interpreter, so mapping-runtime tests could not import
+
+Status:
+- These changes are merge-worthy runtime and tooling hardening.
+- They do not change the Track 1 policy: promotion still depends on measured benchmark results and fresh-real gating, not architecture churn.

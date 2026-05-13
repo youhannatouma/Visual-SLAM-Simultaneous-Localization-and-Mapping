@@ -219,6 +219,9 @@ class LiveMapper:
         self.loop_closure_correction_records: List[Dict[str, float]] = []
         self.post_closure_alignment_dists: List[float] = []
 
+    def mapping_pose(self) -> PoseSample:
+        return self.corrected_pose if self.loop_closure_enabled else self.pose
+
     def world_to_grid(self, x: float, y: float) -> Tuple[int, int]:
         gx = int(round(x / self.meters_per_cell))
         gy = int(round(y / self.meters_per_cell))
@@ -470,6 +473,7 @@ class LiveMapper:
         frame_shape: Sequence[int],
         depth_map: Optional[np.ndarray] = None,
     ) -> Tuple[Tuple[float, float], Tuple[int, int]]:
+        pose_ref = self.mapping_pose()
         h, w = int(frame_shape[0]), int(frame_shape[1])
         cx, cy = det["center"]
         area = max(1.0, float(det.get("area", 1.0)))
@@ -481,9 +485,9 @@ class LiveMapper:
         else:
             rng = self._range_from_area_ratio(area_ratio)
             rng = self._class_range_adjustment(str(det.get("label", "")), rng)
-        ang = self.pose.theta + bearing
-        wx = self.pose.x + rng * math.cos(ang)
-        wy = self.pose.y + rng * math.sin(ang)
+        ang = pose_ref.theta + bearing
+        wx = pose_ref.x + rng * math.cos(ang)
+        wy = pose_ref.y + rng * math.sin(ang)
         gx, gy = self.world_to_grid(wx, wy)
         return (wx, wy), (gx, gy)
 
@@ -552,7 +556,8 @@ class LiveMapper:
         depth_map: Optional[np.ndarray] = None,
     ) -> List[MapEvent]:
         self.grid = np.clip(self.grid * self.decay, 0.0, 1.0)
-        pose_cell = self.world_to_grid(self.pose.x, self.pose.y)
+        pose_ref = self.mapping_pose()
+        pose_cell = self.world_to_grid(pose_ref.x, pose_ref.y)
         events: List[MapEvent] = []
         frame_cells: Set[Tuple[int, int]] = set()
         strong_count = 0

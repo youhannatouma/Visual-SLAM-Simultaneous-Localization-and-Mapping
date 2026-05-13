@@ -26,6 +26,10 @@ data/processed*/
 data/raw/session_*.csv
 data/raw/autolabel_*.csv
 reports/runtime/
+reports/capture/
+reports/media_review_*.csv
+reports/correction_audit_*.json
+reports/corrections_*.csv
 reports/seed_sweep*/
 reports/tuning_*/
 reports/epoch_sweep*/
@@ -38,9 +42,12 @@ reports/*deltas*.md
 models/seed_sweep*/
 models/epoch_sweep*/
 models/track1/
+models/tuning_*/
 models/exp_*.pt
 data/processed_epoch_sweep*/
 data/processed_tuning*/
+data/raw_candidate_highacc/
+data/raw_archive/
 
 # Temporary files
 *.tmp
