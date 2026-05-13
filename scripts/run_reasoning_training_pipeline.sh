@@ -16,6 +16,8 @@ SEED=42
 TRAIN_EPOCHS=30
 TRAIN_BATCH_SIZE=32
 TRAIN_LR=1e-3
+TRAIN_WEIGHT_DECAY=0.0
+TRAIN_LABEL_SMOOTHING=0.0
 COLLECT_FIRST=0
 PYTHON_BIN=".venv311/bin/python"
 MODEL_PATH="models/reasoning_model.pt"
@@ -29,9 +31,9 @@ FRESH_REAL_MIN_IMPROVE_MACRO_F1=0.10
 ESTABLISH_PROMOTION_BASELINE=0
 PROMOTION_WRITE_BASELINE=1
 PROMOTION_STRICT=1
-HOLDOUT_PER_CLASS=8
-HOLDOUT_MIN_TOTAL=32
-HOLDOUT_MIN_SOURCES=2
+HOLDOUT_PER_CLASS=12
+HOLDOUT_MIN_TOTAL=48
+HOLDOUT_MIN_SOURCES=4
 
 usage() {
   cat <<USAGE
@@ -55,6 +57,8 @@ Options:
   --epochs <n>                   Training epochs (default: 30).
   --batch-size <n>               Training batch size (default: 32).
   --lr <float>                   Training learning rate (default: 1e-3).
+  --weight-decay <float>         Adam weight decay (default: 0.0).
+  --label-smoothing <float>      Cross-entropy label smoothing (default: 0.0).
   --model-path <path>            Model output path (default: models/reasoning_model.pt).
   --allow-archive-experiment     Allow training from globs that include data/raw_archive.
   --disk-min-free-gb <n>         Minimum free disk guard before running (default: 1.0).
@@ -66,9 +70,9 @@ Options:
   --fresh-real-min-improve-acc <x> Minimum required fresh-real accuracy improvement vs promoted baseline (default: 0.10).
   --fresh-real-min-improve-macro-f1 <x> Minimum required fresh-real macro F1 improvement vs promoted baseline (default: 0.10).
   --establish-promotion-baseline If baseline is missing, save current metrics as baseline and mark run non-promotable.
-  --holdout-per-class <n>        Holdout rows per class (default: 8).
-  --holdout-min-total <n>        Minimum total holdout rows (default: 32).
-  --holdout-min-sources <n>      Minimum distinct holdout sources (default: 2).
+  --holdout-per-class <n>        Holdout rows per class (default: 12).
+  --holdout-min-total <n>        Minimum total holdout rows (default: 48).
+  --holdout-min-sources <n>      Minimum distinct holdout sources (default: 4).
   -h, --help                     Show this help.
 USAGE
 }
@@ -141,6 +145,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --lr)
       TRAIN_LR="$2"
+      shift 2
+      ;;
+    --weight-decay)
+      TRAIN_WEIGHT_DECAY="$2"
+      shift 2
+      ;;
+    --label-smoothing)
+      TRAIN_LABEL_SMOOTHING="$2"
       shift 2
       ;;
     --model-path)
@@ -304,6 +316,8 @@ fi
   --epochs "$TRAIN_EPOCHS" \
   --batch-size "$TRAIN_BATCH_SIZE" \
   --lr "$TRAIN_LR" \
+  --weight-decay "$TRAIN_WEIGHT_DECAY" \
+  --label-smoothing "$TRAIN_LABEL_SMOOTHING" \
   --seed "$SEED"
 
 "$PYTHON_BIN" - <<PY
@@ -322,6 +336,7 @@ baseline_path.parent.mkdir(parents=True, exist_ok=True)
 
 fresh_acc_threshold = float(r'''$FRESH_REAL_MIN_IMPROVE_ACC''')
 fresh_f1_threshold = float(r'''$FRESH_REAL_MIN_IMPROVE_MACRO_F1''')
+fresh_eval_min_total = int(r'''$HOLDOUT_MIN_TOTAL''')
 establish_mode = bool(int(r'''$ESTABLISH_PROMOTION_BASELINE'''))
 write_baseline = bool(int(r'''$PROMOTION_WRITE_BASELINE'''))
 strict_mode = bool(int(r'''$PROMOTION_STRICT'''))
@@ -341,13 +356,23 @@ def get_float(obj, *keys):
     except Exception:
         return None
 
+
+def get_int(obj, *keys):
+    value = get_float(obj, *keys)
+    if value is None:
+        return None
+    return int(value)
+
 gate_results = {}
 recommended_actions = []
 promotable = True
 status = "promoted"
 failure_reasons = []
 
-if not baseline_path.exists():
+baseline_present = baseline_path.exists()
+gate_results["baseline_present"] = {"passed": bool(baseline_present), "path": str(baseline_path)}
+
+if not baseline_present:
     if establish_mode:
         shutil.copy2(new_path, baseline_path)
         promotable = False
@@ -355,101 +380,164 @@ if not baseline_path.exists():
         failure_reasons.append("No promoted baseline existed; baseline established for next-cycle comparison.")
         recommended_actions.append("Run one more full cycle to compare against the newly established promoted baseline.")
     else:
-        raise SystemExit(
-            "Promotion gate failed: baseline metrics file is missing. "
-            "Use --establish-promotion-baseline once to initialize."
-        )
+        promotable = False
+        status = "baseline_missing"
+        failure_reasons.append("Promoted baseline metrics missing; cannot compute promotion gates.")
+        recommended_actions.append("Run once with --establish-promotion-baseline to seed baseline.")
 else:
     old = json.loads(baseline_path.read_text(encoding="utf-8"))
     tol = 0.005
 
     old_test = get_float(old, "accuracy", "test")
     new_test = get_float(new, "accuracy", "test")
-    test_ok = (old_test is not None and new_test is not None and new_test + tol >= old_test)
+    test_ok = False
+    if old_test is None or new_test is None:
+        failure_reasons.append("Test accuracy missing in baseline or current metrics.")
+        recommended_actions.append("Ensure metrics.json includes accuracy.test for baseline and current run.")
+    else:
+        test_ok = new_test + tol >= old_test
     gate_results["test_accuracy_non_regression"] = {
         "passed": bool(test_ok),
         "old": old_test,
         "new": new_test,
         "tolerance": tol,
     }
-    if not test_ok:
+    if not test_ok and old_test is not None and new_test is not None:
         promotable = False
         failure_reasons.append(f"Test accuracy regressed ({old_test} -> {new_test}).")
         recommended_actions.append("Collect more diverse real samples and rebalance weak classes before retraining.")
 
     key_class_fail = False
+    key_class_missing = []
     key_class_rows = {}
     for label in ("CHECK_TABLE", "MOVE_TO_CHAIR"):
         old_f1 = get_float(old, "per_class", label, "f1")
         new_f1 = get_float(new, "per_class", label, "f1")
-        ok = old_f1 is not None and new_f1 is not None and new_f1 + 1e-12 >= old_f1
+        ok = False
+        if old_f1 is None or new_f1 is None:
+            key_class_missing.append(label)
+        else:
+            ok = new_f1 + 1e-12 >= old_f1
         key_class_rows[label] = {"passed": bool(ok), "old_f1": old_f1, "new_f1": new_f1}
         if not ok:
             key_class_fail = True
     gate_results["key_class_f1_non_regression"] = {"passed": not key_class_fail, "classes": key_class_rows}
-    if key_class_fail:
+    if key_class_missing:
+        promotable = False
+        failure_reasons.append(f"Key-class F1 missing for: {', '.join(sorted(set(key_class_missing)))}.")
+        recommended_actions.append("Ensure per-class F1 is present for key classes in baseline and current metrics.")
+    if key_class_fail and not key_class_missing:
         promotable = False
         failure_reasons.append("Key class F1 regression detected.")
         recommended_actions.append("Increase reviewed real data for CHECK_TABLE/MOVE_TO_CHAIR edge cases.")
+
+    new_fresh_rows = get_int(new, "fresh_real_eval", "rows")
+    seq_len = get_int(new, "sequence_length") or 1
+    min_eval_rows = max(1, int(fresh_eval_min_total) - int(seq_len) + 1)
+    fresh_eval_ok = new_fresh_rows is not None and new_fresh_rows >= min_eval_rows
+    gate_results["fresh_real_eval_min_rows"] = {
+        "passed": bool(fresh_eval_ok),
+        "rows": new_fresh_rows,
+        "min_rows": min_eval_rows,
+    }
 
     old_fresh_acc = get_float(old, "fresh_real_eval", "accuracy")
     new_fresh_acc = get_float(new, "fresh_real_eval", "accuracy")
     old_fresh_f1 = get_float(old, "fresh_real_eval", "macro_f1")
     new_fresh_f1 = get_float(new, "fresh_real_eval", "macro_f1")
 
-    acc_delta = None if old_fresh_acc is None or new_fresh_acc is None else (new_fresh_acc - old_fresh_acc)
-    f1_delta = None if old_fresh_f1 is None or new_fresh_f1 is None else (new_fresh_f1 - old_fresh_f1)
-    fresh_acc_ok = acc_delta is not None and acc_delta >= fresh_acc_threshold
-    fresh_f1_ok = f1_delta is not None and f1_delta >= fresh_f1_threshold
-    gate_results["fresh_real_improvement"] = {
-        "passed": bool(fresh_acc_ok and fresh_f1_ok),
-        "old": {"accuracy": old_fresh_acc, "macro_f1": old_fresh_f1},
-        "new": {"accuracy": new_fresh_acc, "macro_f1": new_fresh_f1},
-        "delta": {"accuracy": acc_delta, "macro_f1": f1_delta},
-        "required_delta": {"accuracy": fresh_acc_threshold, "macro_f1": fresh_f1_threshold},
-    }
-    if not (fresh_acc_ok and fresh_f1_ok):
+    if not fresh_eval_ok:
         promotable = False
         failure_reasons.append(
-            "Fresh-real improvement gate not met "
-            f"(delta accuracy={acc_delta}, delta macro_f1={f1_delta})."
+            f"Fresh-real eval too small or missing (rows={new_fresh_rows}, min_rows={min_eval_rows})."
         )
-        recommended_actions.append("Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes.")
-
-    # Stop-rule gate: disallow promotion when fresh-real improves in aggregate
-    # but one or more classes regress (mixed-sign class deltas).
-    class_labels = ("AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE")
-    class_gate_rows = {}
-    class_regression = False
-    for label in class_labels:
-        old_cls = get_float(old, "fresh_real_eval", "per_class", label, "f1")
-        new_cls = get_float(new, "fresh_real_eval", "per_class", label, "f1")
-        ok = old_cls is not None and new_cls is not None and (new_cls + 1e-12 >= old_cls)
-        class_gate_rows[label] = {
-            "passed": bool(ok),
-            "old_f1": old_cls,
-            "new_f1": new_cls,
-            "delta_f1": None if old_cls is None or new_cls is None else (new_cls - old_cls),
+        recommended_actions.append("Rebuild fresh-real holdout with enough rows and sources before promotion.")
+        gate_results["fresh_real_improvement"] = {
+            "passed": False,
+            "reason": "fresh_real_eval_too_small",
+            "old": {"accuracy": old_fresh_acc, "macro_f1": old_fresh_f1},
+            "new": {"accuracy": new_fresh_acc, "macro_f1": new_fresh_f1},
+            "delta": {"accuracy": None, "macro_f1": None},
+            "required_delta": {"accuracy": fresh_acc_threshold, "macro_f1": fresh_f1_threshold},
         }
-        if not ok:
-            class_regression = True
-    gate_results["fresh_real_per_class_non_regression"] = {
-        "passed": not class_regression,
-        "classes": class_gate_rows,
-    }
-    if class_regression:
-        promotable = False
-        failure_reasons.append("Fresh-real per-class regression detected (mixed-sign deltas).")
-        recommended_actions.append("Continue data-refresh cycles and target regressing fresh-real classes before promotion.")
+        gate_results["fresh_real_per_class_non_regression"] = {
+            "passed": False,
+            "reason": "fresh_real_eval_too_small",
+            "classes": {},
+        }
+    else:
+        acc_delta = None if old_fresh_acc is None or new_fresh_acc is None else (new_fresh_acc - old_fresh_acc)
+        f1_delta = None if old_fresh_f1 is None or new_fresh_f1 is None else (new_fresh_f1 - old_fresh_f1)
+        fresh_acc_ok = acc_delta is not None and acc_delta >= fresh_acc_threshold
+        fresh_f1_ok = f1_delta is not None and f1_delta >= fresh_f1_threshold
+        gate_results["fresh_real_improvement"] = {
+            "passed": bool(fresh_acc_ok and fresh_f1_ok),
+            "old": {"accuracy": old_fresh_acc, "macro_f1": old_fresh_f1},
+            "new": {"accuracy": new_fresh_acc, "macro_f1": new_fresh_f1},
+            "delta": {"accuracy": acc_delta, "macro_f1": f1_delta},
+            "required_delta": {"accuracy": fresh_acc_threshold, "macro_f1": fresh_f1_threshold},
+        }
+        if old_fresh_acc is None or new_fresh_acc is None or old_fresh_f1 is None or new_fresh_f1 is None:
+            promotable = False
+            failure_reasons.append("Fresh-real metrics missing in baseline or current metrics.")
+            recommended_actions.append("Ensure fresh_real_eval metrics exist for baseline and current run.")
+        elif not (fresh_acc_ok and fresh_f1_ok):
+            promotable = False
+            failure_reasons.append(
+                "Fresh-real improvement gate not met "
+                f"(delta accuracy={acc_delta}, delta macro_f1={f1_delta})."
+            )
+            recommended_actions.append(
+                "Collect at least two new independent real batches focused on low-light/clutter/occlusion/mixed scenes."
+            )
 
-    if promotable:
-      if write_baseline:
+        # Stop-rule gate: disallow promotion when fresh-real improves in aggregate
+        # but one or more classes regress (mixed-sign class deltas).
+        class_labels = ("AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE")
+        class_gate_rows = {}
+        class_regression = False
+        class_missing = []
+        for label in class_labels:
+            old_cls = get_float(old, "fresh_real_eval", "per_class", label, "f1")
+            new_cls = get_float(new, "fresh_real_eval", "per_class", label, "f1")
+            ok = False
+            if old_cls is None or new_cls is None:
+                class_missing.append(label)
+            else:
+                ok = new_cls + 1e-12 >= old_cls
+            class_gate_rows[label] = {
+                "passed": bool(ok),
+                "old_f1": old_cls,
+                "new_f1": new_cls,
+                "delta_f1": None if old_cls is None or new_cls is None else (new_cls - old_cls),
+            }
+            if not ok:
+                class_regression = True
+        gate_results["fresh_real_per_class_non_regression"] = {
+            "passed": not class_regression,
+            "classes": class_gate_rows,
+        }
+        if class_missing:
+            promotable = False
+            failure_reasons.append(
+                f"Fresh-real per-class F1 missing for: {', '.join(sorted(set(class_missing)))}."
+            )
+            recommended_actions.append("Ensure fresh_real_eval per_class metrics exist for all action classes.")
+        if class_regression and not class_missing:
+            promotable = False
+            failure_reasons.append("Fresh-real per-class regression detected (mixed-sign deltas).")
+            recommended_actions.append(
+                "Continue data-refresh cycles and target regressing fresh-real classes before promotion."
+            )
+
+if promotable:
+    if write_baseline:
         shutil.copy2(new_path, baseline_path)
         status = "promoted"
-      else:
-        status = "promotable_no_write"
     else:
-      status = "not_promoted"
+        status = "promotable_no_write"
+elif status == "promoted":
+    status = "not_promoted"
 
 summary = {
     "status": status,
@@ -464,7 +552,7 @@ summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 print(f"Promotion summary: {summary_path}")
 
 if not promotable and strict_mode:
-  raise SystemExit("Promotion gate failed: run is non-promotable. See promotion summary JSON for details.")
+    raise SystemExit("Promotion gate failed: run is non-promotable. See promotion summary JSON for details.")
 PY
 
 echo "Pipeline completed successfully."

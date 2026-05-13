@@ -2,6 +2,7 @@ import argparse
 import glob
 import json
 import os
+import fnmatch
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,18 @@ import pandas as pd
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
 REAL_SOURCE_TYPES = {"real_media", "manual_live"}
 SYNTHETIC_SOURCE_TYPES = {"synthetic", "simulated", "rebalance"}
+EXCLUDED_RAW_FILE_PATTERNS = (
+    "zz_fresh_real_holdout_*.csv",
+    "media_labeled_stage2_train_refix_*.csv",
+    "media_labeled_stage2_move_hardneg_*.csv",
+    "move_recovery_pool_*.csv",
+    "vid*.csv",
+)
+FRESH_HOLDOUT_EXCLUDED_PATTERNS = (
+    "curated_real_balanced.csv",
+    "media_labeled_stage2_check_table_train_*.csv",
+    "media_labeled_stage2_curated_train_*.csv",
+)
 
 
 def parse_args():
@@ -47,19 +60,19 @@ def parse_args():
     parser.add_argument(
         "--holdout-per-class",
         type=int,
-        default=8,
+        default=12,
         help="Target rows per class for fresh real holdout assembly.",
     )
     parser.add_argument(
         "--holdout-min-total",
         type=int,
-        default=32,
+        default=48,
         help="Minimum required total rows for fresh real holdout.",
     )
     parser.add_argument(
         "--holdout-min-sources",
         type=int,
-        default=2,
+        default=4,
         help="Minimum required independent real sources represented in holdout.",
     )
     parser.add_argument(
@@ -80,13 +93,28 @@ def load_raw_frames(pattern):
     if not files:
         raise FileNotFoundError(f"No CSV files matched pattern: {pattern}")
 
-    frames = []
+    filtered_files = []
+    excluded_files = []
     for path in files:
+        name = os.path.basename(path)
+        if any(fnmatch.fnmatch(name, pat) for pat in EXCLUDED_RAW_FILE_PATTERNS):
+            excluded_files.append(path)
+            continue
+        filtered_files.append(path)
+
+    if not filtered_files:
+        raise FileNotFoundError(
+            "All matched CSV files were excluded by raw-file policy. "
+            f"Pattern={pattern} excluded={excluded_files}"
+        )
+
+    frames = []
+    for path in filtered_files:
         frame = pd.read_csv(path)
         frame["__source_file"] = os.path.basename(path)
         frames.append(frame)
 
-    return pd.concat(frames, ignore_index=True), files
+    return pd.concat(frames, ignore_index=True), filtered_files
 
 
 def infer_source_type(source_file, explicit_value=None):
@@ -339,6 +367,13 @@ def holdout_multisource_balanced(df, out_dir, holdout_per_class, holdout_min_tot
         raise ValueError("Cannot build fresh real holdout: source metadata missing")
 
     working = real_df.copy()
+    if "__source_file" in working.columns:
+        holdout_mask = ~working["__source_file"].astype(str).apply(
+            lambda name: any(fnmatch.fnmatch(name, pat) for pat in FRESH_HOLDOUT_EXCLUDED_PATTERNS)
+        )
+        holdout_candidates = working.loc[holdout_mask].copy()
+        if not holdout_candidates.empty:
+            working = holdout_candidates
     if batch_col is not None:
         working["__holdout_unit"] = working[batch_col].fillna("").astype(str).str.strip()
         working.loc[working["__holdout_unit"].eq(""), "__holdout_unit"] = working[source_col].astype(str)

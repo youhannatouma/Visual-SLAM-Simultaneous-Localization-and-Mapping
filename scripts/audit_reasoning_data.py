@@ -1,4 +1,5 @@
 import argparse
+import fnmatch
 import glob
 import json
 import os
@@ -9,6 +10,13 @@ import pandas as pd
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
 REAL_SOURCE_TYPES = {"real_media", "manual_live"}
 SYNTHETIC_SOURCE_TYPES = {"synthetic", "simulated", "rebalance"}
+EXCLUDED_RAW_FILE_PATTERNS = (
+    "zz_fresh_real_holdout_*.csv",
+    "media_labeled_stage2_train_refix_*.csv",
+    "media_labeled_stage2_move_hardneg_*.csv",
+    "move_recovery_pool_*.csv",
+    "vid*.csv",
+)
 
 
 def parse_args():
@@ -52,13 +60,28 @@ def load_dataset(pattern):
     if not files:
         raise FileNotFoundError(f"No files found for pattern: {pattern}")
 
-    frames = []
+    filtered_files = []
+    excluded_files = []
     for path in files:
+        name = os.path.basename(path)
+        if any(fnmatch.fnmatch(name, pat) for pat in EXCLUDED_RAW_FILE_PATTERNS):
+            excluded_files.append(path)
+            continue
+        filtered_files.append(path)
+
+    if not filtered_files:
+        raise FileNotFoundError(
+            "All matched CSV files were excluded by raw-file policy. "
+            f"Pattern={pattern} excluded={excluded_files}"
+        )
+
+    frames = []
+    for path in filtered_files:
         frame = pd.read_csv(path)
         frame["__source_file"] = os.path.basename(path)
         frames.append(frame)
 
-    return pd.concat(frames, ignore_index=True), files
+    return pd.concat(frames, ignore_index=True), filtered_files
 
 
 def safe_ratio(numerator, denominator):

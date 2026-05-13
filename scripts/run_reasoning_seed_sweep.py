@@ -77,19 +77,19 @@ def parse_args():
     parser.add_argument(
         "--holdout-per-class",
         type=int,
-        default=8,
+        default=12,
         help="Rows per class used to assemble fresh-real holdout.",
     )
     parser.add_argument(
         "--holdout-min-total",
         type=int,
-        default=32,
+        default=48,
         help="Minimum total rows required in fresh-real holdout.",
     )
     parser.add_argument(
         "--holdout-min-sources",
         type=int,
-        default=2,
+        default=4,
         help="Minimum distinct real sources required in fresh-real holdout.",
     )
     parser.add_argument(
@@ -170,11 +170,17 @@ def run_pipeline(
 
 
 def load_metrics(path):
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    metrics_path = Path(path)
+    if not metrics_path.exists():
+        return {}, None, {}, None, None, None
+    data = json.loads(metrics_path.read_text(encoding="utf-8"))
     test_acc = data.get("accuracy", {}).get("test")
     per_class = data.get("per_class", {})
     macro_f1 = data.get("macro_f1")
-    return data, test_acc, per_class, macro_f1
+    fresh_real = data.get("fresh_real_eval", {})
+    fresh_real_acc = fresh_real.get("accuracy")
+    fresh_real_macro_f1 = fresh_real.get("macro_f1")
+    return data, test_acc, per_class, macro_f1, fresh_real_acc, fresh_real_macro_f1
 
 
 def load_promotion_summary(path):
@@ -188,8 +194,8 @@ def load_promotion_summary(path):
 
 
 def is_non_regressing(baseline, candidate):
-    _, base_acc, base_classes, _ = baseline
-    _, cand_acc, cand_classes, _ = candidate
+    _, base_acc, base_classes, _, _, _ = baseline
+    _, cand_acc, cand_classes, _, _, _ = candidate
 
     if base_acc is None or cand_acc is None:
         return False
@@ -209,7 +215,7 @@ def select_and_rank_runs(baseline, candidates, promotion_summaries):
     ranked = []
     for seed, metrics_path in candidates.items():
         metrics = load_metrics(metrics_path)
-        _, _, per_class, macro_f1 = metrics
+        _, test_acc, per_class, macro_f1, fresh_real_acc, fresh_real_macro_f1 = metrics
         move_f1 = per_class.get("MOVE_TO_CHAIR", {}).get("f1", 0.0)
         promotion = promotion_summaries.get(seed, {})
         promotable = bool(promotion.get("promotable", False))
@@ -221,8 +227,11 @@ def select_and_rank_runs(baseline, candidates, promotion_summaries):
                 "seed": int(seed),
                 "promotable": promotable,
                 "non_regressing": bool(non_regressing),
+                "test_accuracy": float(test_acc or 0.0),
                 "move_to_chair_f1": float(move_f1 or 0.0),
                 "macro_f1": float(macro_f1 or 0.0),
+                "fresh_real_accuracy": float(fresh_real_acc or 0.0),
+                "fresh_real_macro_f1": float(fresh_real_macro_f1 or 0.0),
                 "metrics": metrics_path,
                 "failure_reasons": failure_reasons,
                 "recommended_actions": recommended_actions,
@@ -235,6 +244,9 @@ def select_and_rank_runs(baseline, candidates, promotion_summaries):
     ranked.sort(
         key=lambda r: (
             1 if r["promotable"] else 0,
+            1 if r["non_regressing"] else 0,
+            r["test_accuracy"],
+            r["fresh_real_macro_f1"],
             r["move_to_chair_f1"],
             r["macro_f1"],
         ),
@@ -277,6 +289,8 @@ def main():
     os.makedirs(model_root, exist_ok=True)
 
     baseline = load_metrics(args.baseline)
+    if not baseline[0]:
+        print(f"Warning: baseline metrics not found at {args.baseline}; non-regression checks will be skipped.")
 
     metrics_paths = {}
     promotion_summaries = {}
@@ -329,8 +343,11 @@ def main():
         metrics_path = best["metrics"]
         summary["best"] = {
             "seed": best_seed,
+            "test_accuracy": float(best.get("test_accuracy", 0.0)),
             "move_to_chair_f1": float(move_f1),
             "macro_f1": float(macro_f1),
+            "fresh_real_accuracy": float(best.get("fresh_real_accuracy", 0.0)),
+            "fresh_real_macro_f1": float(best.get("fresh_real_macro_f1", 0.0)),
             "metrics": metrics_path,
             "promotable": bool(best.get("promotable", False)),
             "failure_reasons": best.get("failure_reasons", []),

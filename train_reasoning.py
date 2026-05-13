@@ -194,6 +194,15 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
+def build_loss(label_smoothing):
+    if label_smoothing <= 0.0:
+        return nn.CrossEntropyLoss()
+    try:
+        return nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    except TypeError:
+        return nn.CrossEntropyLoss()
+
+
 def train(
     train_path,
     val_path,
@@ -203,6 +212,8 @@ def train(
     epochs,
     batch_size,
     lr,
+    weight_decay,
+    label_smoothing,
     fresh_real_eval_path,
     algorithm,
     seed,
@@ -243,8 +254,8 @@ def train(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    criterion = build_loss(label_smoothing)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     best_val_acc = -1.0
     best_state = None
@@ -319,6 +330,13 @@ def train(
         "feature_size": train_dataset.feature_size,
         "feature_columns": train_dataset.feature_cols,
         "seed": int(seed),
+        "training": {
+            "epochs": int(epochs),
+            "batch_size": int(batch_size),
+            "lr": float(lr),
+            "weight_decay": float(weight_decay),
+            "label_smoothing": float(label_smoothing),
+        },
         "threshold_local_rows": HUGE_DATASET_THRESHOLD,
         "dataset_rows": {
             "train": len(train_dataset),
@@ -369,6 +387,8 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--weight-decay", type=float, default=0.0, help="Adam weight decay")
+    parser.add_argument("--label-smoothing", type=float, default=0.0, help="Cross-entropy label smoothing")
     parser.add_argument("--fresh-real-eval", default="", help="Optional held-out fresh real eval CSV")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
     parser.add_argument("--algorithm", default="mlp", choices=["mlp"], help="Training algorithm (locked to MLP)")
@@ -386,6 +406,8 @@ if __name__ == "__main__":
         epochs=args.epochs,
         batch_size=args.batch_size,
         lr=args.lr,
+        weight_decay=args.weight_decay,
+        label_smoothing=args.label_smoothing,
         fresh_real_eval_path=args.fresh_real_eval,
         algorithm=args.algorithm,
         seed=args.seed,

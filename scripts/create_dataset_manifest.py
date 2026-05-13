@@ -1,4 +1,5 @@
 import argparse
+import fnmatch
 import glob
 import hashlib
 import json
@@ -9,6 +10,13 @@ from pathlib import Path
 import pandas as pd
 
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
+EXCLUDED_RAW_FILE_PATTERNS = (
+    "zz_fresh_real_holdout_*.csv",
+    "media_labeled_stage2_train_refix_*.csv",
+    "media_labeled_stage2_move_hardneg_*.csv",
+    "move_recovery_pool_*.csv",
+    "vid*.csv",
+)
 
 
 def file_sha256(path: Path):
@@ -40,6 +48,14 @@ def main():
     files = sorted(glob.glob(args.input_glob))
     if not files:
         raise FileNotFoundError(f"No files matched: {args.input_glob}")
+    files = [
+        f for f in files
+        if not any(fnmatch.fnmatch(Path(f).name, pat) for pat in EXCLUDED_RAW_FILE_PATTERNS)
+    ]
+    if not files:
+        raise FileNotFoundError(
+            f"All files matched by {args.input_glob} were excluded by raw-file policy"
+        )
 
     frames = []
     file_entries = []
