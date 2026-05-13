@@ -10,9 +10,6 @@
     "data/raw/media_labeled_batch_K_real.csv",
     "data/raw/media_labeled_stage2_check_table_train_20260506.csv",
     "data/raw/media_labeled_stage2_curated_train_20260506.csv",
-    "data/raw/media_labeled_stage2_move_hardneg_KJ_20260507.csv",
-    "data/raw/media_labeled_stage2_train_refix_20260506.csv",
-    "data/raw/move_recovery_pool_20260507.csv",
     "data/raw/session_20260507_002204.csv",
     "data/raw/session_20260507_162210.csv",
     "data/raw/session_20260507_163015.csv",
@@ -21,12 +18,7 @@
     "data/raw/session_vid1_fixed.csv",
     "data/raw/session_vid2_fixed.csv",
     "data/raw/session_vid3_fixed.csv",
-    "data/raw/session_vid4_fixed.csv",
-    "data/raw/vid1.csv",
-    "data/raw/vid2.csv",
-    "data/raw/vid3.csv",
-    "data/raw/vid4.csv",
-    "data/raw/zz_fresh_real_holdout_20260506.csv"
+    "data/raw/session_vid4_fixed.csv"
   ],
   "balance": "oversample",
   "seed": 42,
@@ -36,11 +28,11 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 1664,
-    "rows_after_dropna": 1664,
-    "rows_after_finite_check": 1664,
-    "rows_after_label_filter": 1664,
-    "rows_after_dedup": 1622,
+    "rows_initial": 1236,
+    "rows_after_dropna": 1236,
+    "rows_after_finite_check": 1236,
+    "rows_after_label_filter": 1236,
+    "rows_after_dedup": 1194,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
@@ -50,53 +42,48 @@
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 328,
-      "MOVE_TO_CHAIR": 498,
-      "CHECK_TABLE": 336,
-      "EXPLORE": 460
+      "AVOID_PERSON": 273,
+      "MOVE_TO_CHAIR": 306,
+      "CHECK_TABLE": 282,
+      "EXPLORE": 333
     }
   },
   "source_quality": {
-    "real_rows": 1529,
+    "real_rows": 1194,
     "synthetic_rows": 0,
-    "total_clean": 1622,
-    "real_share": 0.9426633785450061,
+    "total_clean": 1194,
+    "real_share": 1.0,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
     "max_synthetic_share": 0.4
   },
   "holdout_latest_real_source": {
     "enabled": true,
-    "rows": 32,
+    "rows": 48,
     "path": "data/processed/fresh_real_eval.csv",
     "require_two_real_batches_for_holdout": true,
-    "holdout_per_class": 8,
-    "holdout_min_total": 32,
-    "holdout_min_sources": 2,
+    "holdout_per_class": 12,
+    "holdout_min_total": 48,
+    "holdout_min_sources": 4,
     "qa": {
-      "rows": 32,
+      "rows": 48,
       "per_class": {
-        "AVOID_PERSON": 8,
-        "MOVE_TO_CHAIR": 8,
-        "CHECK_TABLE": 8,
-        "EXPLORE": 8
+        "AVOID_PERSON": 12,
+        "MOVE_TO_CHAIR": 12,
+        "CHECK_TABLE": 12,
+        "EXPLORE": 12
       },
       "per_source": {
-        "batch_move_recovery_20260507": 4,
-        "batch_stage2_train_refix_20260506": 4,
-        "batch_B_real": 3,
-        "batch_J_real": 3,
-        "batch_K_real": 3,
-        "batch_stage2_train_20260506": 3,
-        "batch_stage2_holdout_refix_20260506": 3,
-        "batch_A_real": 2,
-        "batch_D_real": 2,
-        "batch_stage2_check_table_train_20260506": 1,
-        "batch_I_real": 1
+        "batch_A_real": 8,
+        "batch_B_real": 6,
+        "batch_K_real": 5,
+        "batch_D_real": 5,
+        "batch_J_real": 4,
+        "batch_I_real": 3
       },
-      "dropped_from_train_due_to_holdout": 32,
-      "min_required_total": 32,
-      "min_required_sources": 2
+      "dropped_from_train_due_to_holdout": 48,
+      "min_required_total": 48,
+      "min_required_sources": 4
     }
   },
   "feature_columns": [
@@ -145,9 +132,9 @@
     "f42"
   ],
   "rows": {
-    "train": 1372,
-    "val": 292,
-    "test": 296,
-    "total": 1960
+    "train": 896,
+    "val": 192,
+    "test": 196,
+    "total": 1284
   }
 }

@@ -22,7 +22,7 @@ Thumbs.db
 # Generated datasets, reports, and runtime outputs.
 # Keep promoted snapshots and small fixtures by force-adding them intentionally.
 videos/
-data/processed*/
+data/processed_*/
 data/raw/session_*.csv
 data/raw/autolabel_*.csv
 reports/runtime/
@@ -30,6 +30,7 @@ reports/capture/
 reports/media_review_*.csv
 reports/correction_audit_*.json
 reports/corrections_*.csv
+reports/batch_coverage_*.json
 reports/seed_sweep*/
 reports/tuning_*/
 reports/epoch_sweep*/
@@ -39,6 +40,14 @@ reports/exp_*/
 reports/tmp_*.json
 reports/*confusion*.csv
 reports/*deltas*.md
+reports/dataset_audit.json
+reports/metrics.json
+reports/metrics_previous.json
+reports/promotion_summary.json
+reports/confusion_matrix.png
+reports/fresh_real_misclassifications*.csv
+reports/correction_shortlist*.csv
+reports/review_status/*.json
 models/seed_sweep*/
 models/epoch_sweep*/
 models/track1/
