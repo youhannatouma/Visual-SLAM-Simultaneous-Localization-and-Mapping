@@ -28,14 +28,19 @@ data/raw/autolabel_*.csv
 reports/runtime/
 reports/seed_sweep*/
 reports/tuning_*/
+reports/epoch_sweep*/
+reports/tuning_holdout_hardneg_summary.json
 reports/track1/
 reports/exp_*/
 reports/tmp_*.json
 reports/*confusion*.csv
 reports/*deltas*.md
 models/seed_sweep*/
+models/epoch_sweep*/
 models/track1/
 models/exp_*.pt
+data/processed_epoch_sweep*/
+data/processed_tuning*/
 
 # Temporary files
 *.tmp
