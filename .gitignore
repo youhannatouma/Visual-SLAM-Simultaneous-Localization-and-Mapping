@@ -19,16 +19,27 @@ Thumbs.db
 # Model weights (optional)
 *.pt
 
+# Generated datasets, reports, and runtime outputs.
+# Keep promoted snapshots and small fixtures by force-adding them intentionally.
+videos/
+data/processed*/
+data/raw/session_*.csv
+data/raw/autolabel_*.csv
+reports/runtime/
+reports/seed_sweep*/
+reports/tuning_*/
+reports/track1/
+reports/exp_*/
+reports/tmp_*.json
+reports/*confusion*.csv
+reports/*deltas*.md
+models/seed_sweep*/
+models/track1/
+models/exp_*.pt
+
 # Temporary files
 *.tmp
+
 # Local virtualenvs and local install files
 .venv*/
 requirements.local.txt
-<<<<<<< HEAD
-=======
-
-.venv*/
-__pycache__/
-*.pyc
-requirements.local.txt
->>>>>>> 11bf97fd (Keep project changes, exclude local environment artifacts)

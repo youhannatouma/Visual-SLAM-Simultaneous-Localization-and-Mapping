@@ -1,536 +1,142 @@
-# 🧠 AI Visual Navigation System
+# AI Visual Navigation With VSLAM-Oriented Mapping
 
-### Visual Odometry + Object Detection + AI Reasoning
+This repository is an AI visual navigation demo with VSLAM-oriented mapping hooks. It is not a full production Visual SLAM stack yet. The current system combines YOLO object detection, ORB-based visual motion, a learned/rule action policy, semantic occupancy-grid mapping, runtime evaluation reports, and dataset/training utilities.
 
----
+## Current Architecture
 
-## 📌 Overview
-
-This project implements a **real-time AI-driven visual navigation system** that combines:
-
-* Computer Vision (feature tracking)
-* Deep Learning (object detection)
-* AI Logic (rule-based reasoning)
-
-The system uses a camera to **perceive its environment**, estimate motion, and **make decisions based on detected objects**.
-
----
-
-## 🎯 Objectives
-
-* Detect objects in real time using AI
-* Estimate camera motion using visual features
-* Build a simple understanding of the environment
-* Apply AI reasoning to make decisions
-
----
-
-## 🧠 System Architecture
-
-```
-Camera Input
-    ↓
-Object Detection (YOLOv8)
-    ↓
-Feature Tracking (ORB - Visual Odometry)
-    ↓
-State Interpretation
-    ↓
-AI Reasoning Engine
-    ↓
-Decision Output
-    ↓
-Visualization
+```text
+Camera or Video
+  -> YOLO object detection
+  -> ORB visual motion estimate
+  -> optional MiDaS relative depth
+  -> action policy: MLP fallback to rules
+  -> semantic occupancy-grid mapper
+  -> live HUD, map window, and JSON report
 ```
 
----
+The mapper supports three backend modes:
 
-## ⚙️ Technologies Used
+- `heuristic`: default, uses bounding-box size plus bearing to estimate obstacle range.
+- `depth`: uses depth-map values for obstacle projection when depth is enabled.
+- `orb_slam_like`: records an external-backend-required contract while preserving the current runtime fallback. This is a placeholder for a real SLAM backend, not a bundled ORB-SLAM implementation.
 
-* Python
-* OpenCV
-* YOLOv8 (Ultralytics)
-* NumPy
+## Setup
 
----
-
-## 🔍 Features
-
-* ✅ Real-time object detection
-* ✅ ORB feature tracking (motion awareness)
-* ✅ Rule-based AI reasoning system
-* ✅ Live decision overlay
-* ✅ Lightweight and real-time performance
-
----
-
-## 🧠 AI Reasoning System
-
-The system includes a **rule-based decision engine**:
-
-* IF a *chair* is detected → **Target the chair**
-* IF a *person* is detected → **Avoid**
-* ELSE → **Explore the environment**
-
-This demonstrates **symbolic AI logic and decision-making** based on perception.
-
----
-
-## 🚀 Getting Started
-
-### 1. Clone the repository
+Use the project virtualenv when available:
 
 ```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+.venv311/bin/python -m pip install -r requirements.txt
 ```
 
----
+If `.venv311` does not exist, create a compatible environment first. The global `python` command may not exist on macOS, and global `python3` may not include OpenCV.
 
-### 2. Create virtual environment
+## Run Live Or Video
 
 ```bash
-python -m venv venv
-venv\Scripts\activate   # Windows
+.venv311/bin/python main.py
 ```
-
----
-
-### 3. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+.venv311/bin/python main.py --video videos/test.mp4 --no-depth
 ```
 
----
-
-### 4. Run the project
+Depth-aware mapping with calibration:
 
 ```bash
-python main.py
-```
-
----
-
-## 📷 Demo
-
-The system will:
-
-* Open your webcam
-* Detect objects in real time
-* Track visual features
-* Display decisions such as:
-
-  * TARGET CHAIR
-  * AVOID PERSON
-  * EXPLORE
-
----
-
-## 📁 Project Structure
-
-```
-project/
-│
-├── main.py
-├── requirements.txt
-├── .gitignore
-└── README.md
-```
-
----
-
-## 👥 Team Roles
-
-* **Vision & Detection** → Object detection (YOLO)
-* **Motion Estimation** → Feature tracking (ORB)
-* **AI Logic** → Reasoning system and decision-making
-
----
-
-## ⏱️ Development Timeline
-
-* Week 1 → Setup + detection + motion tracking
-* Week 2 → Reasoning system + integration + demo
-
----
-
-## 🎓 Academic Context
-
-This project was developed for a **3rd-year AI course**, focusing on:
-
-* Perception → reasoning → action pipeline
-* Integration of deep learning and symbolic AI
-* Real-time intelligent systems
-
----
-
-## ⚠️ Limitations
-
-* No full 3D mapping (uses simplified visual odometry)
-* Basic rule-based reasoning (not learning-based)
-* Approximate motion estimation
-
----
-
-## 🚀 Future Improvements
-
-* Add object tracking across frames
-* Improve motion estimation accuracy
-* Implement path planning (A*)
-* Upgrade reasoning with probabilistic models
-* Integrate with robotics (ROS)
-
-## Live SLAM Mapping + Joint Runtime Report
-
-`main.py` now supports runtime mapping integration with an explicit pose/action/map-event contract and a combined evaluation report.
-
-Run with mapping + report output:
-
-```bash
-python main.py \
+.venv311/bin/python main.py \
   --video videos/test.mp4 \
-  --map-grid-size 120 \
-  --map-meters-per-cell 0.10 \
-  --map-decay 0.985 \
-  --map-obstacle-increment 0.20 \
-  --map-free-decrement 0.05 \
-  --pose-motion-to-meter-scale 0.0025 \
-  --run-annotations reports/runtime/example_annotations.json \
+  --mapping-backend depth \
+  --camera-calibration calibration/camera.json \
+  --run-annotations data/annotations/mapping_benchmark_gt.json \
   --run-report-out reports/runtime/run_report_test.json
 ```
 
-New runtime flags:
+Calibration JSON may use either:
+
+```json
+{"fx": 500, "fy": 500, "cx": 320, "cy": 240, "width": 640, "height": 480}
+```
+
+or:
+
+```json
+{"camera_matrix": [[500, 0, 320], [0, 500, 240], [0, 0, 1]]}
+```
+
+## Runtime Flags
+
+Important mapping/evaluation flags:
 
 - `--no-mapping`
+- `--mapping-backend heuristic|depth|orb_slam_like`
+- `--camera-calibration <path>`
+- `--benchmark-video <path>`
+- `--run-annotations <path>`
+- `--run-report-out <path>`
+- `--headless`
+- `--max-frames <n>`
+- `--det-confidence <float>`
+- `--det-imgsz <n>`
 - `--map-grid-size`
 - `--map-meters-per-cell`
-- `--map-decay`
-- `--map-obstacle-increment`
-- `--map-free-decrement`
-- `--map-camera-fov-deg`
-- `--map-ray-step-cells`
 - `--pose-motion-to-meter-scale`
-- `--run-annotations`
-- `--run-report-out`
+- `--map-require-benchmark-for-promotion`
+- `--map-obstacle-match-radius-cells <n>`
+- `--map-benchmark-obstacle-metric cell|object`
+- `--map-obstacle-footprint-radius-cells <n>`
+- `--map-obstacle-footprint-shape square|horizontal|vertical|cross|class_aware`
+- `--map-obstacle-temporal-persistence-frames <n>`
 
-Runtime report schema includes:
+Reports keep the top-level fields `label_metrics`, `map_metrics`, `pose_stats`, `config`, `timing`, `warnings`, and `failures`.
+Obstacle reports include cell-level metrics plus object-component metrics. Use `--map-benchmark-obstacle-metric object` when annotations describe obstacle blobs but the mapper emits object center cells.
 
-- `label_metrics`
-- `map_metrics`
-- `pose_stats`
-- `config`
-- `timing`
-- `warnings` / `failures`
+## Offline Video Tools
 
----
-
-## Training the Reasoning Model
-
-This project includes a learnable reasoning engine with a pandas/numpy preprocessing workflow.
-
-1. Run the app with `python main.py`.
-2. Use the keyboard to label examples while the camera is running:
-   * `a` → save `AVOID_PERSON`
-   * `c` → save `MOVE_TO_CHAIR`
-   * `t` → save `CHECK_TABLE`
-   * `e` → save `EXPLORE`
-3. Move or copy raw CSV logs to `data/raw/`.
-4. Prepare train/val/test splits:
+Interactive labeling:
 
 ```bash
-python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --seed 42
+.venv311/bin/python video_processor.py label --video videos/room1.mp4 --session room1_fixed
 ```
 
-5. Train the model:
+Automatic rule-based labeling:
 
 ```bash
-python train_reasoning.py --train data/processed/train.csv --val data/processed/val.csv --test data/processed/test.csv --model models/reasoning_model.pt
+.venv311/bin/python video_processor.py autolabel --video videos/room1.mp4 --output data/raw/room1.csv
 ```
 
-6. Restart `main.py`.
-
-The app auto-loads `models/reasoning_model.pt` when present.
-
-### Local training guardrail
-
-If `train + val + test` has **50,000+ rows**, `train_reasoning.py` exits and asks you to train remotely (Colab/server), then copy the trained `.pt` back into `models/`.
-
----
-
-## Build a High-Quality Reasoning Dataset
-
-Use this checklist before training:
-
-1. Collect diverse scenes with `main.py`:
-   * person close/centered and person off-center
-   * chair near/far and partially occluded
-   * table-focused scenes
-   * empty scenes for `EXPLORE`
-2. Keep labels balanced across all 4 actions (`a/c/t/e`) instead of over-logging one key.
-3. Save session CSVs in `data/raw/` (multiple files are supported).
-4. Audit quality first (real-data-first gates):
+Offline inference with map inset:
 
 ```bash
-python scripts/audit_reasoning_data.py --input-glob "data/raw/*.csv" --min-per-class 50 --max-class-imbalance-ratio 1.3 --min-real-share 0.6 --max-synthetic-share 0.4 --report reports/dataset_audit.json
+.venv311/bin/python video_processor.py infer \
+  --video videos/test.mp4 \
+  --output out/test_annotated.mp4 \
+  --mapping \
+  --mapping-backend heuristic
 ```
 
-5. Prepare processed splits with a quality gate:
+## Training And Evaluation
 
-```bash
-python scripts/prepare_reasoning_data.py --input-glob "data/raw/*.csv" --out-dir data/processed --balance cap --min-per-class 50 --min-real-share 0.6 --max-synthetic-share 0.4 --holdout-latest-real-source --holdout-per-class 8 --holdout-min-total 32 --holdout-min-sources 2 --seed 42
-```
+The reasoning model is an action policy, not a SLAM model. It predicts one of:
 
-If any class is below `--min-per-class`, preprocessing fails and tells you which labels need more data.
+- `AVOID_PERSON`
+- `MOVE_TO_CHAIR`
+- `CHECK_TABLE`
+- `EXPLORE`
 
-6. Run the full guarded pipeline (audit -> preprocess -> train -> promotion checks):
+Run the guarded training pipeline:
 
 ```bash
 scripts/run_reasoning_training_pipeline.sh --python-bin .venv311/bin/python
 ```
 
-### Data source tracking
+Current promotion status is tracked in `reports/promotion_summary.json`. If it says `not_promoted`, use the recommended actions there before replacing the promoted model.
 
-Each row is tagged with a `source_type`:
+## What Is Still Not Full VSLAM
 
-* `manual_live` (from `main.py` key labeling)
-* `real_media` (from `build_reasoning_data_from_media.py`)
-* `synthetic`, `simulated`, `rebalance`
+To become real VSLAM, the project still needs calibrated camera motion, keyframes, persistent landmarks, triangulation/depth-scale grounding, pose graph optimization, relocalization, and true loop closure. The current map is a useful semantic occupancy grid for navigation experiments, but it should be described as heuristic/depth-aided mapping unless an external SLAM backend is integrated.
 
-Audit now reports class distribution by source and enforces:
-
-* real share >= `0.6`
-* synthetic/simulated/rebalance share <= `0.4`
-* class imbalance <= `1.3` before balancing
-
-### Lightweight media label review
-
-When building from media, a review file is exported automatically:
+## Tests
 
 ```bash
-python scripts/build_reasoning_data_from_media.py --media-dir /path/to/images_or_videos --video-stride 10
+.venv311/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
-
-This creates:
-
-* `data/raw/media_labeled_<timestamp>.csv`
-* `reports/media_review_<timestamp>.csv` (sample + hard cases for manual correction)
-
-You can apply review corrections by passing:
-
-```bash
-python scripts/build_reasoning_data_from_media.py --media-dir /path/to/images_or_videos --review-corrections reports/your_review_corrections.csv
-```
-
-Correction CSV columns: `row_id,final_label,drop_row`.
-
-When corrections are provided, schema/label validation is strict. Invalid labels or `drop_row` values fail the run.
-Each ingestion also writes a correction audit artifact:
-
-- `reports/correction_audit_<review_file_stem>.json`
-
-The audit includes relabel/drop/unchanged counts, override summary, QA sample evidence, and machine-checkable gate fields.
-
-### Training algorithm policy
-
-`train_reasoning.py` is locked to **MLP** (`--algorithm mlp` only).  
-`reasoning.py` runtime inference is also locked to the same MLP architecture.
-
-## Real-Only Governance & Operations
-
-### Default data policy
-
-- Default training source is `data/raw/*.csv` (real-only workflow).
-- `data/raw_archive` is excluded by default and only allowed in explicit experiments.
-- Synthetic/simulated data should not enter default production training cycles.
-
-### Batch-aware ingestion and coverage
-
-Use `--batch-id` and `--scenario` when ingesting media:
-
-```bash
-python scripts/build_reasoning_data_from_media.py \
-  --media-dir /path/to/media \
-  --batch-id batch_A_real \
-  --scenario low_light \
-  --video-stride 10
-```
-
-Outputs now include:
-
-- `reports/batch_coverage_<timestamp>.json` (scenario x class counts)
-- `reports/review_status/<review_file_stem>.json` (`pending`/`applied`)
-
-### Mandatory review gate
-
-Preprocessing can enforce that review corrections are applied before training:
-
-```bash
-python scripts/prepare_reasoning_data.py \
-  --input-glob "data/raw/*.csv" \
-  --out-dir data/processed \
-  --enforce-review-applied \
-  --holdout-latest-real-source \
-  --holdout-per-class 8 \
-  --holdout-min-total 32 \
-  --holdout-min-sources 2 \
-  --require-two-real-batches-for-holdout
-```
-
-### Dataset manifest & changelog snapshot
-
-Generate immutable dataset metadata for each cycle:
-
-```bash
-python scripts/create_dataset_manifest.py \
-  --input-glob "data/raw/*.csv" \
-  --processed-dir data/processed \
-  --manifest-path data/manifest/dataset_manifest.json \
-  --changelog-path data/manifest/CHANGELOG.md
-```
-
-Capture plan template:
-
-- `data/manifest/capture_plan_template.json`
-
-### Disk guard and aggressive retention
-
-Preflight + prune + budget report:
-
-```bash
-python scripts/manage_artifacts.py --min-free-gb 1.0 --prune --budget-report reports/artifact_budget.json
-```
-
-### End-to-end guarded run
-
-```bash
-scripts/run_reasoning_training_pipeline.sh --python-bin .venv311/bin/python
-```
-
-This run now enforces:
-
-- strict audit gates
-- two independent real batches
-- review applied gate
-- fresh real holdout policy
-- dataset manifest snapshot
-- disk preflight and retention
-- MLP-only training with promotion checks
-
-### Promotion baseline + fresh-real hard improvement gate
-
-Promotion now uses a promoted baseline artifact:
-
-- baseline file default: `reports/metrics_promoted_baseline.json`
-- summary file default: `reports/promotion_summary.json`
-
-Fresh-real promotion requires:
-
-- `delta(fresh_real_eval.accuracy) >= +0.10`
-- `delta(fresh_real_eval.macro_f1) >= +0.10`
-
-Initialize baseline once (non-promotable establishment run):
-
-```bash
-scripts/run_reasoning_training_pipeline.sh \
-  --python-bin .venv311/bin/python \
-  --establish-promotion-baseline
-```
-
-Regular cycle run (requires improvement vs baseline):
-
-```bash
-scripts/run_reasoning_training_pipeline.sh \
-  --python-bin .venv311/bin/python \
-  --fresh-real-min-improve-acc 0.10 \
-  --fresh-real-min-improve-macro-f1 0.10
-```
-
-### Track 1 reasoning loop (strong labels)
-
-Canonical Track 1 command:
-
-```bash
-python scripts/run_track1_reasoning_loop.py \
-  --python-bin .venv311/bin/python \
-  --seeds 17,42,123 \
-  --epochs-min 12 \
-  --epochs-max 20 \
-  --comparable-holdout-per-class 8 \
-  --comparable-holdout-min-total 32 \
-  --comparable-holdout-min-sources 2 \
-  --noise-holdout-per-class 12 \
-  --noise-holdout-min-total 48 \
-  --noise-holdout-min-sources 2 \
-  --noise-check-every-cycles 3 \
-  --max-refresh-cycles 12
-```
-
-Behavior summary:
-
-- Comparable cycles run with fixed holdout `8/32/2`.
-- Periodic noise-check cycles run every `3` cycles with holdout `12/48/2`.
-- Promotion requires all gates together:
-  - test non-regression
-  - key-class non-regression
-  - fresh-real aggregate thresholds
-  - fresh-real per-class non-regression (all 4 classes)
-- Architecture is frozen in loop logic; only data composition, balancing, and hard-negative tuning are allowed.
-
-Track 1 report output:
-
-- `reports/track1/<timestamp>/track1_cycle_summary.json`
-
-Field guide:
-
-- `status`: final loop outcome (`promotable` or `max_cycles_reached_without_promotion`).
-- `config`: exact sweep/holdout/cadence settings used.
-- `cycles[*].profile`: `comparable` or `noise_check`.
-- `cycles[*].evaluation.promotion`: gate pass/fail details for the best seed in that cycle.
-- `cycles[*].evaluation.fresh_real_per_class`: per-class fresh-real `old_f1`, `new_f1`, `delta_f1`, and pass flag.
-- `cycles[*].evaluation.regressing_classes`: classes with negative (or missing) fresh-real deltas.
-- `cycles[*].evaluation.targeted_refresh_recommendations`: refresh guidance constrained to regressing classes.
-
-### Real cycle runner (batch C / batch D workflow)
-
-Use the cycle runner to execute:
-ingest -> correction audit -> coverage report -> guarded pipeline.
-
-```bash
-scripts/run_real_data_cycle.sh \
-  --python-bin .venv311/bin/python \
-  --media-dir-a /path/to/batch_C_media \
-  --media-dir-b /path/to/batch_D_media \
-  --batch-a-id batch_C_real \
-  --batch-b-id batch_D_real \
-  --scenario-a clutter \
-  --scenario-b occlusion \
-  --review-corrections-a reports/corrections_batch_C_real.csv \
-  --review-corrections-b reports/corrections_batch_D_real.csv \
-  --pipeline-arg --fresh-real-min-improve-acc \
-  --pipeline-arg 0.10 \
-  --pipeline-arg --fresh-real-min-improve-macro-f1 \
-  --pipeline-arg 0.10
-```
-
-Cycle summary output:
-
-- `reports/cycle_report.json`
-
-This report includes scenario coverage, correction-audit references, and gate fields for CI parsing.
-
----
-
-## �📄 License
-
-This project is for academic and educational use.
-
----
-
-## 💬 Acknowledgments
-
-* Open-source computer vision and AI libraries
-* YOLOv8 by Ultralytics
-* OpenCV community
-
----

@@ -1,0 +1,11 @@
+{
+  "frame_labels": [
+    {"frame": 1, "label": "EXPLORE"},
+    {"frame": 2, "label": "MOVE_TO_CHAIR"}
+  ],
+  "obstacles": [
+    {"frame": 1, "grid_xy": [10, 12]},
+    {"frame": 1, "grid_xy": [11, 12]},
+    {"frame": 2, "grid_xy": [12, 13]}
+  ]
+}

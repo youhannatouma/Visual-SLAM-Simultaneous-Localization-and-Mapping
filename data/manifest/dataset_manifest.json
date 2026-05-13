@@ -1,6 +1,6 @@
 {
-  "dataset_version": "v20260507_165343",
-  "timestamp": 1778162023,
+  "dataset_version": "v20260511_131417",
+  "timestamp": 1778494457,
   "input_glob": "data/raw/*.csv",
   "raw_files": [
     {
@@ -79,50 +79,101 @@
       "sha256": "7971051f749bae620c16fc22cf1535bab4ca1571f460bf3cf69a2c419fcc4d71"
     },
     {
+      "file": "data/raw/session_20260508_180556.csv",
+      "rows": 8,
+      "sha256": "7fdaf4185712982258394f9cb7d3bb48ceee06242d89b0fe1827e02344b19506"
+    },
+    {
+      "file": "data/raw/session_20260508_181712.csv",
+      "rows": 5,
+      "sha256": "adc4f3911ad8a20729a645a74e3d2de7000ba35a725453e9eebdd122b98c2fd7"
+    },
+    {
+      "file": "data/raw/session_vid1_fixed.csv",
+      "rows": 2,
+      "sha256": "7a85a49e6eb5fe3f3e683bc2b2476115baea2b73c4bd267fcbe0cdc82d7126e4"
+    },
+    {
+      "file": "data/raw/session_vid2_fixed.csv",
+      "rows": 3,
+      "sha256": "f2f920f14306f77321cbef044e65d885b503e93919fff78f196bb3cde7ba3f6c"
+    },
+    {
+      "file": "data/raw/session_vid3_fixed.csv",
+      "rows": 38,
+      "sha256": "9b9d1fcb501d0c2c53b390e0c58a937755faca99bab8e544b9a33eed6d751630"
+    },
+    {
+      "file": "data/raw/session_vid4_fixed.csv",
+      "rows": 17,
+      "sha256": "c1a1b4e1fcde82ecd0cf055f24d640c12dafe83dd8425c411a913cbc4bc8522c"
+    },
+    {
+      "file": "data/raw/vid1.csv",
+      "rows": 5,
+      "sha256": "b40529d3a39c533675bcdc014579dfb7d4d353a04295c7026d34c13ae3b6438c"
+    },
+    {
+      "file": "data/raw/vid2.csv",
+      "rows": 7,
+      "sha256": "1c0f1fe3a49a837a1579863c5f394ae01e03ed6e826ddee684f9e9c290cf7601"
+    },
+    {
+      "file": "data/raw/vid3.csv",
+      "rows": 44,
+      "sha256": "6fc9e86eac7e75625c41482f8ae78da8344eb7edcec8c084cc2443f6ec7bbfa7"
+    },
+    {
+      "file": "data/raw/vid4.csv",
+      "rows": 37,
+      "sha256": "e6558c668ddf189f844c6f901a4d95614bd3ebdafd116f402ee432c79fdd60d5"
+    },
+    {
       "file": "data/raw/zz_fresh_real_holdout_20260506.csv",
       "rows": 48,
       "sha256": "150c4e6dfb02323452789e7217da2cfe32b115c04d139b78031d27564fba8422"
     }
   ],
-  "raw_total_rows": 1498,
+  "raw_total_rows": 1664,
   "source_type_distribution": {
     "real_media": 1487,
-    "manual_live": 11
+    "autolabel_video": 93,
+    "manual_live": 84
   },
   "class_distribution": {
-    "AVOID_PERSON": 327,
-    "MOVE_TO_CHAIR": 460,
-    "CHECK_TABLE": 328,
-    "EXPLORE": 383
+    "AVOID_PERSON": 328,
+    "MOVE_TO_CHAIR": 509,
+    "CHECK_TABLE": 353,
+    "EXPLORE": 474
   },
   "processed_files": [
     {
       "file": "data/processed/train.csv",
-      "sha256": "8c49aa545c3391b3eb8cbf8e519377eb8f2730b772d3f1645532ce99a472568d",
-      "bytes": 732878
+      "sha256": "1616354b688983e9579ff9072e13b8470cb116f2e29e6819c2f64a5c62580ab9",
+      "bytes": 758904
     },
     {
       "file": "data/processed/val.csv",
-      "sha256": "2d4c61e5c499b9527384b0ecf0cd3b485a8dbf6267a0b8736046bfe215949b20",
-      "bytes": 150773
+      "sha256": "e9fe58f03cb8ee63dfe6dc86c0e7947ffde0c7bd5fbc26776188db5041686e83",
+      "bytes": 168983
     },
     {
       "file": "data/processed/test.csv",
-      "sha256": "2e3022e2aa1d4da88eda424b1a37d91c4b6cc03bc363c7be710b7501fbec374d",
-      "bytes": 161024
+      "sha256": "16967ec23b3d216c0791d145d7dc6d131be22712c11507dcdff15d503da03ce0",
+      "bytes": 169786
     },
     {
       "file": "data/processed/fresh_real_eval.csv",
-      "sha256": "d9ec2f8e4a8b0f32dcc8aaf80eda65eb68952f18118b3416bc0aac665ee3a2f8",
-      "bytes": 14913
+      "sha256": "a1f46b6c6608a02a401ac151dc65a68ecfe69cd2c81e120ec9733f72c0d7e1b4",
+      "bytes": 14765
     },
     {
       "file": "data/processed/metadata.json",
-      "sha256": "2c46c17a0772052b263a4d47b4b56c49bf16ca58c62c5ad07bca1620c1ffd282",
-      "bytes": 3280
+      "sha256": "d2868a8b43417dcf98e31977b571ba0cd5f7ccd251e05672fed7cbdf5a55aab0",
+      "bytes": 3640
     }
   ],
-  "fingerprint_sha256": "27131dded48f9a1867ce2c3d36e9d84d970ff941579794c0b2be66c932f7c121",
+  "fingerprint_sha256": "ac2aea27d800a5fc4e8e6788e91a9917f1e704285008d31412ec1d4ab281ee5b",
   "policy": {
     "default_training_source": "data/raw",
     "raw_archive_excluded_by_default": true,

@@ -584,3 +584,19 @@
 - class distribution: {'AVOID_PERSON': 327, 'MOVE_TO_CHAIR': 460, 'CHECK_TABLE': 328, 'EXPLORE': 383}
 - source distribution: {'real_media': 1487, 'manual_live': 11}
 
+## v20260511_131306
+- timestamp: 1778494386
+- raw files: 26
+- raw rows: 1664
+- fingerprint: ac2aea27d800a5fc4e8e6788e91a9917f1e704285008d31412ec1d4ab281ee5b
+- class distribution: {'AVOID_PERSON': 328, 'MOVE_TO_CHAIR': 509, 'CHECK_TABLE': 353, 'EXPLORE': 474}
+- source distribution: {'real_media': 1487, 'autolabel_video': 93, 'manual_live': 84}
+
+## v20260511_131417
+- timestamp: 1778494457
+- raw files: 26
+- raw rows: 1664
+- fingerprint: ac2aea27d800a5fc4e8e6788e91a9917f1e704285008d31412ec1d4ab281ee5b
+- class distribution: {'AVOID_PERSON': 328, 'MOVE_TO_CHAIR': 509, 'CHECK_TABLE': 353, 'EXPLORE': 474}
+- source distribution: {'real_media': 1487, 'autolabel_video': 93, 'manual_live': 84}
+

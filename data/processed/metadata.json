@@ -16,6 +16,16 @@
     "data/raw/session_20260507_002204.csv",
     "data/raw/session_20260507_162210.csv",
     "data/raw/session_20260507_163015.csv",
+    "data/raw/session_20260508_180556.csv",
+    "data/raw/session_20260508_181712.csv",
+    "data/raw/session_vid1_fixed.csv",
+    "data/raw/session_vid2_fixed.csv",
+    "data/raw/session_vid3_fixed.csv",
+    "data/raw/session_vid4_fixed.csv",
+    "data/raw/vid1.csv",
+    "data/raw/vid2.csv",
+    "data/raw/vid3.csv",
+    "data/raw/vid4.csv",
     "data/raw/zz_fresh_real_holdout_20260506.csv"
   ],
   "balance": "oversample",
@@ -26,31 +36,31 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 1498,
-    "rows_after_dropna": 1498,
-    "rows_after_finite_check": 1498,
-    "rows_after_label_filter": 1498,
-    "rows_after_dedup": 1496,
+    "rows_initial": 1664,
+    "rows_after_dropna": 1664,
+    "rows_after_finite_check": 1664,
+    "rows_after_label_filter": 1664,
+    "rows_after_dedup": 1622,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 2,
+    "dropped_duplicates": 42,
     "feature_count": 43
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 327,
-      "MOVE_TO_CHAIR": 460,
-      "CHECK_TABLE": 326,
-      "EXPLORE": 383
+      "AVOID_PERSON": 328,
+      "MOVE_TO_CHAIR": 498,
+      "CHECK_TABLE": 336,
+      "EXPLORE": 460
     }
   },
   "source_quality": {
-    "real_rows": 1496,
+    "real_rows": 1529,
     "synthetic_rows": 0,
-    "total_clean": 1496,
-    "real_share": 1.0,
+    "total_clean": 1622,
+    "real_share": 0.9426633785450061,
     "synthetic_share": 0.0,
     "min_real_share": 0.6,
     "max_synthetic_share": 0.4
@@ -135,9 +145,9 @@
     "f42"
   ],
   "rows": {
-    "train": 1264,
-    "val": 268,
-    "test": 276,
-    "total": 1808
+    "train": 1372,
+    "val": 292,
+    "test": 296,
+    "total": 1960
   }
 }

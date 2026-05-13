@@ -1,209 +1,73 @@
-STEP 2 — Collect Training Videos-------------------------------------------------
+# Training And Data Workflow
 
-Record videos with:
+Use `.venv311/bin/python` for project commands unless you have activated an equivalent environment.
 
-chairs
-tables
-people
-movement
-turning
-obstacles
-empty rooms
-close/far objects
+## 1. Collect Data
 
-Good dataset = MANY environments.
+Capture diverse videos with chairs, tables, people, obstacles, empty rooms, close/far objects, camera motion, and lighting changes.
 
-Examples:
-
-videos/
-    room1.mp4
-    hallway.mp4
-    office.mp4
-    kitchen.mp4
-
-Aim for:
-
-20–60 minutes total video
-multiple lighting conditions
-moving camera
-different object distances
-STEP 3 — Generate Initial Labels Automatically-------------------------------------------------
-
-Use your autolabel mode:
-
-python video_processor.py autolabel --video videos/room1.mp4 --output data/raw/room1.csv
-
-
-
-STEP 4 — Manually Correct Labels (IMPORTANT)----------------------------------------------------------------
-
-Auto-labeling is NEVER enough.
-
-Now manually refine data:
-
-python video_processor.py label --video videos/room1.mp4 --session room1_fixed
+```bash
+.venv311/bin/python video_processor.py label --video videos/room1.mp4 --session room1_fixed
+```
 
 Controls:
 
-Key	Action
-A	avoid person
-C	move to chair
-T	check table
-E	explore
-SPACE	pause
-ESC	quit
+| Key | Label |
+| --- | --- |
+| A | `AVOID_PERSON` |
+| C | `MOVE_TO_CHAIR` |
+| T | `CHECK_TABLE` |
+| E | `EXPLORE` |
+| SPACE | pause/resume |
+| ESC | quit |
 
-This creates high-quality supervised data.
+You can bootstrap labels with rules, then manually review/correct them:
 
-This is the MOST IMPORTANT step.
+```bash
+.venv311/bin/python video_processor.py autolabel --video videos/room1.mp4 --output data/raw/room1_auto.csv
+```
 
-Good labels = good AI.
+## 2. Run The Guarded Pipeline
 
-STEP 5 — Merge CSV Files----------------------------------------------------------------------------
-python merge.py
+```bash
+scripts/run_reasoning_training_pipeline.sh --python-bin .venv311/bin/python
+```
 
-STEP 6 — Split Train / Validation / Test------------------------------------------------------------------
-python split_dataset.py
+The pipeline audits data, prepares train/validation/test/fresh-real splits, trains the MLP policy, writes metrics, and runs promotion gates.
 
-STEP 7 — Train the Model-----------------------------------------------------------------------------
+Key outputs:
 
-Now train:
+- `models/reasoning_model.pt`
+- `reports/metrics.json`
+- `reports/confusion_matrix.png`
+- `reports/promotion_summary.json`
+- `data/manifest/dataset_manifest.json`
 
-python train_reasoning.py --train data/processed/train.csv --val data/processed/val.csv --test data/processed/test.csv --epochs 40 --batch-size 64 --lr 0.001
+## 3. Interpret Promotion Results
 
-STEP 8 — What Happens During Training--------------------------------------------------------------
+Check:
 
-You’ll see:
+```bash
+cat reports/promotion_summary.json
+```
 
-Epoch 1/40 loss=1.22 train_acc=0.61 val_acc=0.58
-Epoch 2/40 loss=0.91 train_acc=0.74 val_acc=0.70
-Epoch 3/40 loss=0.62 train_acc=0.83 val_acc=0.79
+Only treat a model as promoted when `promotable` is `true`. If the run is `not_promoted`, follow the targeted recommendations in the summary before retraining.
 
-The model automatically saves:
+## 4. Runtime Validation
 
-models/reasoning_model.pt
+Run a benchmark video with annotations:
 
-And generates:
+```bash
+.venv311/bin/python main.py \
+  --benchmark-video videos/benchmark.mp4 \
+  --run-annotations data/annotations/mapping_benchmark_gt.json \
+  --mapping-backend depth \
+  --camera-calibration calibration/camera.json \
+  --run-report-out reports/runtime/benchmark_report.json
+```
 
-reports/metrics.json
-reports/confusion_matrix.png
+The current `mapping_benchmark_gt.json` is a starter template. Replace it with real per-frame annotations before using mapping promotion results seriously.
 
-STEP 9 — Use the Trained AI---------------------------------------------------------------------
+## 5. Important Limit
 
-Now run the main system:
-
-python main.py
-
-Or on video:
-
-python main.py --video videos/test.mp4
-
-The AI will now use:
-
-use_model=True
-
-instead of only rule-based logic.
-
-STEP 10 — Improve Accuracy
-
-The biggest improvements come from:
-
-Improvement	Effect
-more videos	HUGE
-more manual labels	HUGE
-balanced classes	HUGE
-LSTM sequence model	VERY HUGE
-trajectory features	HUGE
-depth estimation	MASSIVE
-object velocity	MASSIVE
-semantic maps	MASSIVE
-STEP 11 — Recommended Next Upgrade (VERY IMPORTANT)
-
-Right now your AI sees:
-
-single frame → action
-
-Real robots use:
-
-sequence of frames → action
-
-That’s why your SequenceDataset matters.
-
-Next step:
-
-Replace MLP with LSTM
-
-This will massively improve:
-
-motion understanding
-temporal reasoning
-prediction stability
-navigation quality
-
-
-STEP 12 — Expected Accuracy
-
-Approximate:
-
-System	Accuracy
-rule-based	55–65%
-MLP	70–85%
-LSTM	85–93%
-LSTM + depth	90–97%
-STEP 13 — Best Dataset Strategy
-
-The BEST dataset:
-
-70% auto-label
-30% manual correction
-
-This scales fast while keeping quality high.
-
-STEP 14 — If Training Fails
-
-Common fixes:
-
-CUDA out of memory
-
-Lower batch size:
-
---batch-size 16
-Overfitting
-
-Symptoms:
-
-train_acc=99%
-val_acc=60%
-
-Fixes:
-
-more data
-stronger dropout
-early stopping
-data augmentation
-Low accuracy
-
-Usually caused by:
-
-bad labels
-insufficient diversity
-too few videos
-class imbalance
-STEP 15 — REAL Robotics Upgrade Path
-
-Your current system is already becoming a real robotics AI stack.
-
-Next realistic upgrades:
-
-YOLOv8 tracking
-LSTM reasoning
-Monocular depth estimation
-SLAM mapping
-Path planning
-Reinforcement learning
-Semantic memory
-Goal planner
-Autonomous exploration
-Multi-agent reasoning
-
-That becomes an actual autonomous navigation AI.
+The reasoning model is an action policy. It is not the SLAM backend. Improving training can improve decisions, but real VSLAM quality requires better localization/mapping: calibration, depth/scale handling, keyframes, landmarks, pose graph optimization, and relocalization.
