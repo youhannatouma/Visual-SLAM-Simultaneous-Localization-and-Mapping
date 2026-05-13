@@ -1,7 +1,10 @@
 import unittest
+import json
+import tempfile
 from pathlib import Path
 
 from mapping_runtime import (
+    CameraCalibration,
     LiveMapper,
     PoseSample,
     compute_loop_closure_drift,
@@ -10,6 +13,7 @@ from mapping_runtime import (
     compute_obstacle_persistence_stability,
     compute_occupancy_confidence_concentration,
     compute_pose_jitter_score,
+    load_camera_calibration,
     load_run_annotations,
 )
 
@@ -29,6 +33,62 @@ class MappingRuntimeTests(unittest.TestCase):
         self.assertGreaterEqual(gy, 0)
         self.assertLess(gx, 30)
         self.assertLess(gy, 30)
+
+    def test_gitignore_has_no_conflict_markers(self):
+        gitignore = Path(__file__).resolve().parents[1] / ".gitignore"
+        text = gitignore.read_text(encoding="utf-8")
+        self.assertNotIn("<<<<<<<", text)
+        self.assertNotIn("=======", text)
+        self.assertNotIn(">>>>>>>", text)
+
+    def test_camera_calibration_loads_matrix_and_fields(self):
+        payload = {
+            "camera_matrix": [[500.0, 0.0, 320.0], [0.0, 510.0, 240.0], [0.0, 0.0, 1.0]],
+            "dist_coeffs": [0.1, -0.01, 0.0, 0.0],
+            "width": 640,
+            "height": 480,
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(payload, f)
+            path = f.name
+        cal = load_camera_calibration(path)
+        self.assertEqual(cal.fx, 500.0)
+        self.assertEqual(cal.fy, 510.0)
+        self.assertEqual(cal.cx, 320.0)
+        self.assertEqual(cal.dist_coeffs[0], 0.1)
+
+    def test_depth_projection_uses_depth_map_range(self):
+        cal = CameraCalibration(fx=500.0, fy=500.0, cx=320.0, cy=240.0)
+        mapper = LiveMapper(
+            grid_size=80,
+            meters_per_cell=0.1,
+            camera_calibration=cal,
+            mapping_backend="depth",
+        )
+        det = {"center": (320, 240), "bbox": (310, 230, 330, 250), "area": 400, "confidence": 0.9, "label": "chair"}
+        depth_map = __import__("numpy").full((480, 640), 2.0, dtype="float32")
+        (wx, wy), _ = mapper.project_detection_to_world(det, (480, 640, 3), depth_map=depth_map)
+        self.assertAlmostEqual(wx - mapper.pose.x, 2.0, places=3)
+        self.assertAlmostEqual(wy - mapper.pose.y, 0.0, places=3)
+
+    def test_calibrated_pose_update_uses_intrinsics_and_depth(self):
+        cal = CameraCalibration(fx=500.0, fy=500.0, cx=320.0, cy=240.0)
+        mapper = LiveMapper(
+            camera_calibration=cal,
+            pose_smoothing_window=1,
+            max_translation_m_per_frame=10.0,
+        )
+        start = mapper.pose
+        pose = mapper.update_pose_from_calibrated_flow(
+            dx_px=50.0,
+            dy_px=0.0,
+            dtheta_rad=0.0,
+            timestamp=1.0,
+            nominal_depth_m=2.0,
+            flow_quality=1.0,
+        )
+        self.assertAlmostEqual(pose.x - start.x, 0.2, places=4)
+        self.assertAlmostEqual(pose.y - start.y, 0.0, places=4)
 
     def test_ray_marks_free_and_obstacle(self):
         mapper = LiveMapper(grid_size=50, meters_per_cell=0.1, free_decrement=0.2, obstacle_increment=0.4)
@@ -129,6 +189,12 @@ class MappingRuntimeTests(unittest.TestCase):
         self.assertIn("checks", summary)
         self.assertTrue(all(isinstance(v, bool) for v in summary["checks"].values()))
         self.assertIn("moving_samples", jitter)
+
+    def test_backend_summary_records_mapping_contract(self):
+        mapper = LiveMapper(mapping_backend="orb_slam_like")
+        summary = mapper.backend_summary()
+        self.assertEqual(summary["backend"], "orb_slam_like")
+        self.assertEqual(summary["status"], "external_backend_required")
 
     def test_benchmark_fixture_loads(self):
         fixture = Path(__file__).parent / "fixtures" / "mapping_benchmark_sample.json"

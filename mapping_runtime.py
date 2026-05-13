@@ -40,6 +40,52 @@ class MapEvent:
     timestamp: float
 
 
+@dataclass
+class CameraCalibration:
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    width: int = 640
+    height: int = 480
+    dist_coeffs: Tuple[float, ...] = ()
+
+
+def load_camera_calibration(path: str) -> Optional[CameraCalibration]:
+    if not path:
+        return None
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Camera calibration file not found: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    camera = raw.get("camera_matrix", raw)
+    if isinstance(camera, list):
+        matrix = np.asarray(camera, dtype=np.float64)
+        if matrix.shape != (3, 3):
+            raise ValueError("camera_matrix must be a 3x3 matrix")
+        fx, fy, cx, cy = matrix[0, 0], matrix[1, 1], matrix[0, 2], matrix[1, 2]
+    else:
+        fx = camera.get("fx")
+        fy = camera.get("fy")
+        cx = camera.get("cx")
+        cy = camera.get("cy")
+    values = [fx, fy, cx, cy]
+    if any(v is None for v in values):
+        raise ValueError("Camera calibration must provide fx, fy, cx, cy")
+
+    dist = raw.get("dist_coeffs", raw.get("distortion_coefficients", ()))
+    return CameraCalibration(
+        fx=float(fx),
+        fy=float(fy),
+        cx=float(cx),
+        cy=float(cy),
+        width=int(raw.get("width", 640)),
+        height=int(raw.get("height", 480)),
+        dist_coeffs=tuple(float(x) for x in dist),
+    )
+
+
 def normalize_angle(theta: float) -> float:
     while theta > math.pi:
         theta -= 2 * math.pi
@@ -98,7 +144,13 @@ class LiveMapper:
         loop_closure_correction_alpha: float = 0.25,
         loop_closure_cooldown_frames: int = 45,
         render_raw_trajectory: bool = False,
+        camera_calibration: Optional[CameraCalibration] = None,
+        mapping_backend: str = "heuristic",
+        depth_unit_scale: float = 1.0,
+        inverse_depth: bool = False,
     ):
+        if mapping_backend not in ("heuristic", "depth", "orb_slam_like"):
+            raise ValueError("mapping_backend must be one of: heuristic, depth, orb_slam_like")
         self.grid_size = int(grid_size)
         self.meters_per_cell = float(meters_per_cell)
         self.decay = float(decay)
@@ -119,6 +171,15 @@ class LiveMapper:
         self.loop_closure_correction_alpha = float(np.clip(loop_closure_correction_alpha, 0.05, 1.0))
         self.loop_closure_cooldown_frames = max(1, int(loop_closure_cooldown_frames))
         self.render_raw_trajectory = bool(render_raw_trajectory)
+        self.camera_calibration = camera_calibration
+        self.mapping_backend = str(mapping_backend)
+        self.depth_unit_scale = max(1e-6, float(depth_unit_scale))
+        self.inverse_depth = bool(inverse_depth)
+        self.backend_status = (
+            "external_backend_required"
+            if self.mapping_backend == "orb_slam_like"
+            else "active"
+        )
 
         self.grid = np.full((self.grid_size, self.grid_size), 0.5, dtype=np.float32)
         self.pose = PoseSample(
@@ -214,6 +275,31 @@ class LiveMapper:
         self._update_corrected_pose()
         self.pose_grid_history = self.corrected_pose_grid_history
         return self.pose
+
+    def update_pose_from_calibrated_flow(
+        self,
+        dx_px: float,
+        dy_px: float,
+        dtheta_rad: float,
+        timestamp: float,
+        nominal_depth_m: float,
+        flow_quality: float = 1.0,
+    ) -> PoseSample:
+        if self.camera_calibration is None:
+            raise ValueError("Camera calibration is required for calibrated pose updates")
+        depth_m = max(1e-6, float(nominal_depth_m))
+        fx = max(1e-6, float(self.camera_calibration.fx))
+        fy = max(1e-6, float(self.camera_calibration.fy))
+        tx = float(dx_px) * depth_m / fx
+        ty = float(dy_px) * depth_m / fy
+        return self.update_pose_from_flow(
+            dx_px=tx,
+            dy_px=ty,
+            dtheta_rad=dtheta_rad,
+            timestamp=timestamp,
+            motion_to_meter_scale=1.0,
+            flow_quality=flow_quality,
+        )
 
     def _find_loop_closure_candidate(self) -> Optional[Dict[str, float]]:
         if not self.loop_closure_enabled:
@@ -317,6 +403,41 @@ class LiveMapper:
             return float(np.clip(rng * 1.1, 0.3, 5.0))
         return rng
 
+    def _depth_range_for_detection(self, det: dict, depth_map: Optional[np.ndarray]) -> Optional[float]:
+        if depth_map is None:
+            return None
+        if depth_map.size == 0:
+            return None
+        h, w = depth_map.shape[:2]
+        if "bbox" in det:
+            x1, y1, x2, y2 = det["bbox"]
+            x1 = int(np.clip(x1, 0, w - 1))
+            x2 = int(np.clip(x2, 0, w - 1))
+            y1 = int(np.clip(y1, 0, h - 1))
+            y2 = int(np.clip(y2, 0, h - 1))
+            if x2 <= x1 or y2 <= y1:
+                return None
+            crop = depth_map[y1:y2 + 1, x1:x2 + 1]
+        else:
+            cx, cy = det["center"]
+            cx = int(np.clip(cx, 0, w - 1))
+            cy = int(np.clip(cy, 0, h - 1))
+            r = 2
+            crop = depth_map[max(0, cy - r): min(h, cy + r + 1), max(0, cx - r): min(w, cx + r + 1)]
+        vals = np.asarray(crop, dtype=np.float32)
+        vals = vals[np.isfinite(vals) & (vals > 0)]
+        if vals.size == 0:
+            return None
+        depth_value = float(np.median(vals))
+        if self.inverse_depth:
+            depth_value = 1.0 / max(depth_value, 1e-6)
+        return float(np.clip(depth_value * self.depth_unit_scale, 0.2, 8.0))
+
+    def _bearing_for_detection(self, cx: float, frame_width: int) -> float:
+        if self.camera_calibration is not None:
+            return math.atan2(float(cx) - self.camera_calibration.cx, max(1e-6, self.camera_calibration.fx))
+        return ((float(cx) / max(1.0, float(frame_width))) - 0.5) * math.radians(self.camera_fov_deg)
+
     def _weighted_step(self, base_value: float, confidence: float, strong: bool) -> float:
         if not self.confidence_weighting:
             return base_value * (1.0 if strong else 0.5)
@@ -338,14 +459,19 @@ class LiveMapper:
         self,
         det: dict,
         frame_shape: Sequence[int],
+        depth_map: Optional[np.ndarray] = None,
     ) -> Tuple[Tuple[float, float], Tuple[int, int]]:
         h, w = int(frame_shape[0]), int(frame_shape[1])
         cx, cy = det["center"]
         area = max(1.0, float(det.get("area", 1.0)))
         area_ratio = area / float(max(1, w * h))
-        bearing = ((float(cx) / max(1.0, float(w))) - 0.5) * math.radians(self.camera_fov_deg)
-        rng = self._range_from_area_ratio(area_ratio)
-        rng = self._class_range_adjustment(str(det.get("label", "")), rng)
+        bearing = self._bearing_for_detection(float(cx), w)
+        depth_range = self._depth_range_for_detection(det, depth_map)
+        if self.mapping_backend in ("depth", "orb_slam_like") and depth_range is not None:
+            rng = depth_range
+        else:
+            rng = self._range_from_area_ratio(area_ratio)
+            rng = self._class_range_adjustment(str(det.get("label", "")), rng)
         ang = self.pose.theta + bearing
         wx = self.pose.x + rng * math.cos(ang)
         wy = self.pose.y + rng * math.sin(ang)
@@ -378,7 +504,14 @@ class LiveMapper:
         row = self.cell_event_counts.setdefault(cell, {"hit": 0, "free": 0})
         row[key] = row.get(key, 0) + 1
 
-    def update_from_tracked(self, tracked: Dict[int, dict], frame_shape: Sequence[int], frame_index: int, timestamp: float) -> List[MapEvent]:
+    def update_from_tracked(
+        self,
+        tracked: Dict[int, dict],
+        frame_shape: Sequence[int],
+        frame_index: int,
+        timestamp: float,
+        depth_map: Optional[np.ndarray] = None,
+    ) -> List[MapEvent]:
         self.grid = np.clip(self.grid * self.decay, 0.0, 1.0)
         pose_cell = self.world_to_grid(self.pose.x, self.pose.y)
         events: List[MapEvent] = []
@@ -390,7 +523,7 @@ class LiveMapper:
             label = obj.get("label", "other")
             if label not in ("person", "chair", "table", "sofa", "tv"):
                 continue
-            (wx, wy), (gx, gy) = self.project_detection_to_world(obj, frame_shape)
+            (wx, wy), (gx, gy) = self.project_detection_to_world(obj, frame_shape, depth_map=depth_map)
             conf = float(obj.get("confidence", 0.0))
             is_persistent = self._is_persistent_detection(int(obj_id), str(label), (gx, gy))
             strong_count += 1 if is_persistent else 0
@@ -469,6 +602,15 @@ class LiveMapper:
             "path_length_m": float(dist),
             "corrected_path_length_m": float(corrected_dist),
             "pose_samples": len(self.pose_history),
+        }
+
+    def backend_summary(self) -> dict:
+        return {
+            "backend": self.mapping_backend,
+            "status": self.backend_status,
+            "has_camera_calibration": self.camera_calibration is not None,
+            "depth_unit_scale": float(self.depth_unit_scale),
+            "inverse_depth": bool(self.inverse_depth),
         }
 
     def loop_closure_summary(self) -> dict:
@@ -732,7 +874,9 @@ def load_run_annotations(path: str) -> dict:
 
 
 def write_joint_report(report_path: str, payload: dict):
-    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    report_dir = os.path.dirname(report_path)
+    if report_dir:
+        os.makedirs(report_dir, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 

@@ -25,6 +25,7 @@ from mapping_runtime import (
     load_run_annotations,
     parse_action_label,
     action_confidence_from_tracked,
+    load_camera_calibration,
     write_joint_report,
 )
 from reasoning import ReasoningEngine
@@ -55,8 +56,12 @@ def detection_worker(model_path="yolov8n.pt"):
     while state.running:
         with state.lock:
             if state.frame is None:
-                continue
-            frame = state.frame.copy()
+                frame = None
+            else:
+                frame = state.frame.copy()
+        if frame is None:
+            time.sleep(0.01)
+            continue
 
         results = model(frame, imgsz=320, verbose=False, device=device)
         dets = []
@@ -216,11 +221,16 @@ def robust_orb_flow_delta(prev_kp, prev_des, kp, des, matcher, top_k: int = 80):
 def parse_args():
     p = argparse.ArgumentParser(description="AI Visual Navigation System")
     p.add_argument("--video", default="", help="Path to a video file. Empty uses webcam.")
+    p.add_argument("--benchmark-video", default="", help="Benchmark video path. Equivalent to --video but documented for mapping validation runs.")
     p.add_argument("--camera", type=int, default=0, help="Webcam device index.")
     p.add_argument("--loop", action="store_true", help="Loop video file.")
     p.add_argument("--no-depth", action="store_true", help="Disable MiDaS depth estimation.")
 
     p.add_argument("--no-mapping", action="store_true", help="Disable live occupancy-grid mapping.")
+    p.add_argument("--camera-calibration", default="", help="Optional JSON camera calibration with fx, fy, cx, cy or camera_matrix.")
+    p.add_argument("--mapping-backend", choices=["heuristic", "depth", "orb_slam_like"], default="heuristic", help="Mapping backend contract. depth uses depth-aware projection; orb_slam_like records an external-backend-required status.")
+    p.add_argument("--map-depth-unit-scale", type=float, default=1.0, help="Scale applied to depth-map values before projection.")
+    p.add_argument("--map-inverse-depth", action="store_true", help="Treat provided depth values as inverse depth before scaling.")
     p.add_argument("--map-grid-size", type=int, default=120, help="Occupancy grid size in cells.")
     p.add_argument("--map-meters-per-cell", type=float, default=0.10, help="Map scale in meters per cell.")
     p.add_argument("--map-decay", type=float, default=0.985, help="Per-frame occupancy decay.")
@@ -267,6 +277,10 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.benchmark_video:
+        if args.video and args.video != args.benchmark_video:
+            raise ValueError("--video and --benchmark-video refer to different files")
+        args.video = args.benchmark_video
 
     if args.video:
         if not os.path.exists(args.video):
@@ -287,6 +301,8 @@ def main():
         frame_delay = 1
 
     use_depth = not args.no_depth
+    if args.mapping_backend == "depth" and args.no_depth:
+        print("[Mapping] depth backend requested with --no-depth; falling back to heuristic projection until depth is available.")
     if use_depth:
         print("[Depth] Loading MiDaS...")
         midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
@@ -300,6 +316,9 @@ def main():
         print("[Depth] Disabled.")
 
     use_mapping = not args.no_mapping
+    camera_calibration = load_camera_calibration(args.camera_calibration) if args.camera_calibration else None
+    if camera_calibration is not None:
+        print(f"[Mapping] Loaded camera calibration: {args.camera_calibration}")
     mapper = None
     if use_mapping:
         mapper = LiveMapper(
@@ -323,6 +342,10 @@ def main():
             loop_closure_correction_alpha=args.map_loop_closure_correction_alpha,
             loop_closure_cooldown_frames=args.map_loop_closure_cooldown_frames,
             render_raw_trajectory=args.map_render_raw_trajectory,
+            camera_calibration=camera_calibration,
+            mapping_backend=args.mapping_backend,
+            depth_unit_scale=args.map_depth_unit_scale,
+            inverse_depth=args.map_inverse_depth,
         )
 
     annotations_path = args.run_annotations
@@ -380,6 +403,7 @@ def main():
 
         frame = cv2.resize(frame, (640, 480))
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        depth_metric_map = None
 
         if use_depth:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -390,6 +414,8 @@ def main():
             depth_map = prediction.cpu().numpy()
             depth_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_MAGMA)
+            depth01 = cv2.normalize(depth_map, None, 0.0, 1.0, cv2.NORM_MINMAX).astype(np.float32)
+            depth_metric_map = 0.4 + (1.0 - depth01) * 3.6
 
         with state.lock:
             state.frame = frame.copy()
@@ -425,14 +451,25 @@ def main():
         prev_kp, prev_des = kp, des
 
         if use_mapping and mapper is not None:
-            mapper.update_pose_from_flow(
-                dx_px=dx,
-                dy_px=dy,
-                dtheta_rad=dtheta,
-                timestamp=now_ts,
-                motion_to_meter_scale=args.pose_motion_to_meter_scale,
-                flow_quality=flow_quality,
-            )
+            if camera_calibration is not None and depth_metric_map is not None:
+                nominal_depth = float(np.median(depth_metric_map[np.isfinite(depth_metric_map)]))
+                mapper.update_pose_from_calibrated_flow(
+                    dx_px=dx,
+                    dy_px=dy,
+                    dtheta_rad=dtheta,
+                    timestamp=now_ts,
+                    nominal_depth_m=nominal_depth,
+                    flow_quality=flow_quality,
+                )
+            else:
+                mapper.update_pose_from_flow(
+                    dx_px=dx,
+                    dy_px=dy,
+                    dtheta_rad=dtheta,
+                    timestamp=now_ts,
+                    motion_to_meter_scale=args.pose_motion_to_meter_scale,
+                    flow_quality=flow_quality,
+                )
 
         with state.lock:
             state.motion_text = motion_text
@@ -449,7 +486,13 @@ def main():
             draw_bbox(out, obj, obj_id)
 
         if use_mapping and mapper is not None:
-            frame_events = mapper.update_from_tracked(tracked=snap_tracked, frame_shape=frame.shape, frame_index=frame_idx, timestamp=now_ts)
+            frame_events = mapper.update_from_tracked(
+                tracked=snap_tracked,
+                frame_shape=frame.shape,
+                frame_index=frame_idx,
+                timestamp=now_ts,
+                depth_map=depth_metric_map if args.mapping_backend in ("depth", "orb_slam_like") else None,
+            )
             map_events.extend(frame_events)
 
         if arrow:
@@ -587,6 +630,7 @@ def main():
             "loop_closure_state": lc_summary.get("state", "idle"),
             "loop_closure_summary": lc_summary,
             "mapping_quality_summary": mapping_quality_summary,
+            "backend_summary": mapper.backend_summary(),
         }
         pose_stats = mapper.pose_stats()
     else:
@@ -618,6 +662,12 @@ def main():
             "camera": args.camera,
             "use_depth": bool(use_depth),
             "use_mapping": bool(use_mapping),
+            "benchmark_video": args.benchmark_video,
+            "camera_calibration": args.camera_calibration,
+            "mapping_backend": args.mapping_backend,
+            "map_depth_unit_scale": float(args.map_depth_unit_scale),
+            "map_inverse_depth": bool(args.map_inverse_depth),
+            "mapping_backend_status": mapper.backend_status if mapper is not None else "disabled",
             "map_grid_size": int(args.map_grid_size),
             "map_meters_per_cell": float(args.map_meters_per_cell),
             "map_decay": float(args.map_decay),

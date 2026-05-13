@@ -22,6 +22,7 @@ import cv2
 import torch
 from ultralytics import YOLO
 
+from mapping_runtime import LiveMapper, load_camera_calibration
 from reasoning import ReasoningEngine
 
 
@@ -297,7 +298,15 @@ def mode_autolabel(video_path: str, model_path: str, output_csv: str,
 # MODE 3: INFERENCE / ANNOTATED VIDEO OUTPUT
 # ──────────────────────────────────────────────────────────────────────────────
 
-def mode_infer(video_path: str, output_path: str, model_path: str, use_model: bool):
+def mode_infer(
+    video_path: str,
+    output_path: str,
+    model_path: str,
+    use_model: bool,
+    use_mapping: bool = False,
+    camera_calibration_path: str = "",
+    mapping_backend: str = "heuristic",
+):
     """
     Run the full pipeline on a video and save an annotated MP4.
     No CSV output – pure visualization.
@@ -323,6 +332,8 @@ def mode_infer(video_path: str, output_path: str, model_path: str, use_model: bo
     yolo, device = load_yolo(model_path)
     engine       = ReasoningEngine()
     motion_text  = "No movement"
+    calibration = load_camera_calibration(camera_calibration_path) if camera_calibration_path else None
+    mapper = LiveMapper(camera_calibration=calibration, mapping_backend=mapping_backend) if use_mapping else None
 
     t0 = time.time()
     for frame_no in range(total_frames):
@@ -333,10 +344,16 @@ def mode_infer(video_path: str, output_path: str, model_path: str, use_model: bo
         frame = cv2.resize(frame, (640, 480))
         dets  = detect(yolo, frame, device)
 
-        decision, _ = engine.decide(dets, (320, 240), 640 * 480, motion_text, use_model)
+        decision, tracked = engine.decide(dets, (320, 240), 640 * 480, motion_text, use_model)
         fps_current  = (frame_no + 1) / max(time.time() - t0, 1e-6)
 
         annotated = draw_overlay(frame, dets, decision, engine.state, motion_text, int(fps_current))
+        if mapper is not None:
+            mapper.update_pose_from_orb(0.0, 0.0, time.time(), 0.0025)
+            mapper.update_from_tracked(tracked, frame.shape, frame_no + 1, time.time())
+            map_img = mapper.render_map(out_size=130)
+            annotated[40:170, 500:630] = map_img
+            cv2.rectangle(annotated, (500, 40), (630, 170), (255, 220, 40), 1)
         writer.write(annotated)
 
         if frame_no % 30 == 0:
@@ -381,6 +398,9 @@ def parse_args():
     si.add_argument("--output",     default="",     help="Override output MP4 path")
     si.add_argument("--model",      default="yolov8n.pt", help="YOLO model path")
     si.add_argument("--no-ai",      action="store_true",  help="Use rule-based mode instead of AI model")
+    si.add_argument("--mapping",    action="store_true",  help="Render offline heuristic/depth map inset during inference")
+    si.add_argument("--camera-calibration", default="", help="Optional JSON camera calibration for mapping")
+    si.add_argument("--mapping-backend", choices=["heuristic", "depth", "orb_slam_like"], default="heuristic")
 
     return p.parse_args()
 
@@ -395,7 +415,15 @@ def main():
         mode_autolabel(args.video, args.model, args.output, args.every_n, args.min_conf)
 
     elif args.mode == "infer":
-        mode_infer(args.video, args.output, args.model, use_model=not args.no_ai)
+        mode_infer(
+            args.video,
+            args.output,
+            args.model,
+            use_model=not args.no_ai,
+            use_mapping=args.mapping,
+            camera_calibration_path=args.camera_calibration,
+            mapping_backend=args.mapping_backend,
+        )
 
 
 if __name__ == "__main__":
