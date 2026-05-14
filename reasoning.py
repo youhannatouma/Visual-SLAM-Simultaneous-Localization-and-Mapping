@@ -18,6 +18,9 @@ FEATURE_SIZE = NUM_OBJECT_SLOTS * (len(LABEL_CLASSES) + 4) + len(MOTION_CLASSES)
 
 
 def load_reasoning_checkpoint(model_path, device):
+    """
+    Loads a reasoning model checkpoint and extracts weights and metadata.
+    """
     payload = torch.load(model_path, map_location=device)
     metadata = {}
     if isinstance(payload, dict) and "model_state_dict" in payload:
@@ -32,24 +35,11 @@ def load_reasoning_checkpoint(model_path, device):
     raise ValueError("Unsupported checkpoint format")
 
 
-# =============================================================================
-# IMPROVEMENT 1: DEEPER NETWORK WITH DROPOUT
-# =============================================================================
-# Why deepen the network?
-#   A 2-layer network can only learn simple straight-line boundaries.
-#   A 4-layer network can learn complex, curved decision boundaries.
-#   Example: "person close AND chair far AND moving right" = very complex rule.
-#
-# Why Dropout(0.3)?
-#   During training, we randomly DISABLE 30% of neurons each step.
-#   This forces the network to NOT rely on any single neuron,
-#   so it learns more robust, general patterns instead of memorizing data.
-#
-# Why BatchNorm1d?
-#   Normalizes the values between layers. Prevents "exploding" or "vanishing"
-#   gradients that slow down or break training.
-# =============================================================================
 class ReasoningMLP(nn.Module):
+    """
+    Multi-Layer Perceptron for classifying navigation actions based on object features.
+    Uses batch normalization, dropout, and deep layers for robust decision making.
+    """
     def __init__(self, input_size, sequence_length=SEQUENCE_LENGTH):
         super().__init__()
         self.sequence_length = sequence_length
@@ -70,13 +60,23 @@ class ReasoningMLP(nn.Module):
         )
 
     def forward(self, x):
+        """
+        Processes a sequence of feature vectors to predict the next action.
+        """
         if x.dim() == 3:
             x = x.reshape(x.size(0), -1)
         return self.classifier(x)
 
 
 class ReasoningEngine:
+    """
+    Core navigation logic engine that integrates ML models with rule-based heuristics
+    and object tracking for stable decision making.
+    """
     def __init__(self, model_path="models/reasoning_model.pt", sequence_length=SEQUENCE_LENGTH):
+        """
+        Initializes the engine with tracking buffers, temporal memory, and model weights.
+        """
         self.goal = "find_chair"
 
         self.memory = []
@@ -90,20 +90,11 @@ class ReasoningEngine:
         self.sequence_length = sequence_length
         self.feature_history = deque(maxlen=self.sequence_length)
         
-        # BBox Smoothing
         self.decision_history = deque(maxlen=10)
         self.action_history = deque(maxlen=8)
         self.action_confidence_history = deque(maxlen=8)
-        self.bbox_history = {}  # ID -> deque(maxlen=5)
+        self.bbox_history = {}
 
-        # =================================================================
-        # IMPROVEMENT 3: TEMPORAL MEMORY
-        # =================================================================
-        # This stores which object LABELS were seen in the PREVIOUS frame.
-        # Example: If a person was seen last frame but disappeared now,
-        # the model still "knows" about it via this memory.
-        # This makes the model time-aware, not just snapshot-aware.
-        # =================================================================
         self.prev_labels_seen = set()
 
         self.state = "EXPLORE"
@@ -127,6 +118,9 @@ class ReasoningEngine:
         self.load_model()
 
     def load_model(self):
+        """
+        Loads the neural network weights from the specified checkpoint path.
+        """
         if os.path.exists(self.model_path):
             try:
                 self.model = ReasoningMLP(FEATURE_SIZE, sequence_length=self.sequence_length).to(self.device)
@@ -156,6 +150,9 @@ class ReasoningEngine:
 
     @staticmethod
     def label_to_onehot(label):
+        """
+        Converts a class label to a one-hot encoded vector.
+        """
         onehot = [0.0] * len(LABEL_CLASSES)
         if label in LABEL_CLASSES:
             onehot[LABEL_CLASSES.index(label)] = 1.0
@@ -165,14 +162,23 @@ class ReasoningEngine:
 
     @staticmethod
     def action_to_index(action_label):
+        """
+        Maps an action string to its canonical index.
+        """
         return ACTION_CLASSES.index(action_label)
 
     @staticmethod
     def index_to_action(index):
+        """
+        Maps an action index to its canonical string.
+        """
         return ACTION_CLASSES[index]
 
     @staticmethod
     def motion_to_onehot(motion_text):
+        """
+        Converts motion description text to a one-hot encoded vector.
+        """
         motion = "NONE"
         if motion_text and motion_text != "No movement":
             text = motion_text.upper()
@@ -189,6 +195,9 @@ class ReasoningEngine:
         return onehot
 
     def compute_velocity(points):
+        """
+        Calculates the velocity vector from a sequence of points.
+        """
         if len(points) < 2:
             return 0, 0
 
@@ -198,6 +207,9 @@ class ReasoningEngine:
         return x2 - x1, y2 - y1
 
     def reset_temporal_state(self):
+        """
+        Clears history buffers to reset short-term memory.
+        """
         self.feature_history.clear()
         self.action_history.clear()
         self.action_confidence_history.clear()
@@ -205,6 +217,9 @@ class ReasoningEngine:
         self.last_model_confidence = 0.0
 
     def track_objects(self, detections):
+        """
+        Associates detections across frames using spatial proximity and applies smoothing.
+        """
         updated = {}
         used_ids = set()
 
@@ -230,7 +245,6 @@ class ReasoningEngine:
                 obj_id = self.next_id
                 self.next_id += 1
 
-            # BBox Smoothing: Average last 5 positions
             if obj_id not in self.bbox_history:
                 self.bbox_history[obj_id] = deque(maxlen=5)
 
@@ -254,7 +268,6 @@ class ReasoningEngine:
             updated[obj_id] = det
             used_ids.add(obj_id)
 
-        # Cleanup old bbox histories for objects no longer seen
         current_ids = set(updated.keys())
         self.bbox_history = {k: v for k, v in self.bbox_history.items() if k in current_ids}
 
@@ -262,6 +275,9 @@ class ReasoningEngine:
         return updated
 
     def update_memory(self, tracked):
+        """
+        Updates the short-term memory of detected objects with timestamps.
+        """
         now = time.time()
         for obj in tracked.values():
             self.memory.append({
@@ -277,6 +293,9 @@ class ReasoningEngine:
         self.memory = self.memory[-self.memory_size:]
 
     def frame_direction(self, obj_center, frame_center):
+        """
+        Determines the cardinal direction of an object relative to the frame center.
+        """
         dx = obj_center[0] - frame_center[0]
         dy = obj_center[1] - frame_center[1]
         if abs(dx) > abs(dy):
@@ -284,6 +303,9 @@ class ReasoningEngine:
         return "UP" if dy < 0 else "DOWN"
 
     def compute_score(self, obj, frame_center, frame_area):
+        """
+        Calculates a priority score for an object based on class, area, and center proximity.
+        """
         label = obj["label"]
         conf = obj["confidence"]
         area_ratio = obj["area"] / frame_area
@@ -305,6 +327,9 @@ class ReasoningEngine:
         return score
 
     def choose_target(self, tracked, frame_center, frame_area):
+        """
+        Selects the most relevant navigation targets and threats from tracked objects.
+        """
         person_threat = 0
         nearest_person = None
         best_target = None
@@ -325,11 +350,17 @@ class ReasoningEngine:
         return nearest_person, person_threat, best_target
 
     def object_score(self, det, frame_center, frame_area):
+        """
+        Calculates a sorting score to prioritize which objects are fed into the ML model.
+        """
         label = det["label"]
         score = det["confidence"] + self.priority.get(label, 0) * 0.15 + (det["area"] / frame_area)
         return score
 
     def extract_features(self, detections, frame_center, frame_area, motion_text):
+        """
+        Generates a fixed-size feature vector for a frame, including object slots and temporal context.
+        """
         sorted_detections = sorted(
             detections,
             key=lambda det: self.object_score(det, frame_center, frame_area),
@@ -354,29 +385,21 @@ class ReasoningEngine:
         motion_flag = 0.0 if motion_text == "No movement" or motion_text is None else 1.0
         object_count = min(len(detections), NUM_OBJECT_SLOTS) / NUM_OBJECT_SLOTS
 
-        # =====================================================================
-        # IMPROVEMENT 3: TEMPORAL FEATURES
-        # =====================================================================
-        # For each label class, we add 1.0 if that label was seen LAST frame.
-        # This gives the model "short-term memory":
-        #   - "person was there last frame but disappeared" → might be hiding
-        #   - "chair appeared this frame for the first time" → new target
-        # The model can now make decisions based on CHANGE, not just the current snapshot.
-        # =====================================================================
         temporal_features = [
             1.0 if label in self.prev_labels_seen else 0.0
             for label in LABEL_CLASSES
         ]
 
         features = np.array(slot_features + motion_onehot + [motion_flag, object_count] + temporal_features, dtype=np.float32)
-
-        # HARD SAFETY CLEANUP (critical)
         features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
 
         return features.tolist()
 
 
     def predict_action(self):
+        """
+        Runs neural network inference on the current feature history.
+        """
         if self.model is None or len(self.feature_history) < self.sequence_length:
             return None, 0.0
 
@@ -394,6 +417,9 @@ class ReasoningEngine:
             return self.index_to_action(action_index), action_conf
 
     def _stable_model_action(self):
+        """
+        Finds the most frequent action predicted over a recent window to filter noise.
+        """
         if not self.action_history:
             return None, 0.0
         scores = {}
@@ -404,6 +430,9 @@ class ReasoningEngine:
         return best_action, float(avg_conf)
 
     def format_action(self, action, tracked, frame_center, frame_area):
+        """
+        Adds directional context to high-level action strings based on target positions.
+        """
         person = next((obj for obj in tracked.values() if obj["label"] == "person"), None)
         chair = next((obj for obj in tracked.values() if obj["label"] == "chair"), None)
         table = next((obj for obj in tracked.values() if obj["label"] == "table"), None)
@@ -445,18 +474,9 @@ class ReasoningEngine:
         source_type="manual_live",
         min_confidence=0.65,
     ):
-        # =====================================================================
-        # IMPROVEMENT 2: QUALITY GATE
-        # =====================================================================
-        # Before saving training data, we check the average detection confidence.
-        # If it's below min_confidence (default 60%), we REJECT the sample.
-        #
-        # Why? Blurry or partially visible objects get low confidence scores.
-        # Training on low-confidence data is like teaching with blurry textbooks -
-        # the model learns wrong patterns and becomes less accurate.
-        #
-        # This ensures ONLY high-quality, clear observations are used for training.
-        # =====================================================================
+        """
+        Saves high-quality labeled examples to a CSV file for future model training.
+        """
         if len(detections) > 8:
             print("[QualityGate] REJECTED: too many objects")
             return False
@@ -472,7 +492,7 @@ class ReasoningEngine:
             avg_conf = sum(d["confidence"] for d in detections) / len(detections)
             if avg_conf < min_confidence:
                 print(f"[QualityGate] REJECTED: avg_conf={avg_conf:.2f} < threshold={min_confidence:.2f}")
-                return False  # Return False to signal the caller the sample was rejected
+                return False
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         features = self.extract_features(detections, frame_center, frame_area, motion_text)
@@ -485,9 +505,12 @@ class ReasoningEngine:
             if write_header:
                 writer.writerow(header)
             writer.writerow(row)
-        return True  # Return True to signal success
+        return True
 
     def decide(self, detections, frame_center=(320, 240), frame_area=640 * 480, motion_text=None, use_model=True):
+        """
+        Main decision loop: prioritizes ML model predictions with a rule-based fallback.
+        """
         tracked = self.track_objects(detections)
         self.update_memory(tracked)
 
@@ -542,12 +565,10 @@ class ReasoningEngine:
                 self.state = "EXPLORE"
                 raw_decision = "EXPLORE AND SEARCH"
 
-        # Hysteresis: Return the most common decision in recent history
         self.decision_history.append(raw_decision)
         counts = Counter(self.decision_history)
         self.last_decision = counts.most_common(1)[0][0]
 
-        # Update temporal memory for the NEXT frame's feature extraction
         self.prev_labels_seen = {obj["label"] for obj in tracked.values()}
 
         return self.last_decision, tracked

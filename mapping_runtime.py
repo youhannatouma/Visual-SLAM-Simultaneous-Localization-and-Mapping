@@ -15,6 +15,9 @@ ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
 
 @dataclass
 class PoseSample:
+    """
+    Represents a single pose measurement at a specific timestamp.
+    """
     x: float
     y: float
     theta: float
@@ -23,6 +26,9 @@ class PoseSample:
 
 @dataclass
 class ActionSample:
+    """
+    Represents a navigation action decided by the system.
+    """
     action: str
     confidence: float
     source_mode: str
@@ -31,6 +37,9 @@ class ActionSample:
 
 @dataclass
 class MapEvent:
+    """
+    Represents an event recorded in the occupancy map, such as obstacle detection.
+    """
     event_type: str
     grid_xy: Tuple[int, int]
     world_xy: Tuple[float, float]
@@ -45,6 +54,9 @@ class MapEvent:
 
 @dataclass
 class CameraCalibration:
+    """
+    Holds intrinsic camera parameters for metric 3D projection.
+    """
     fx: float
     fy: float
     cx: float
@@ -55,6 +67,9 @@ class CameraCalibration:
 
 
 def load_camera_calibration(path: str) -> Optional[CameraCalibration]:
+    """
+    Loads camera calibration parameters from a JSON file.
+    """
     if not path:
         return None
     if not os.path.exists(path):
@@ -90,6 +105,9 @@ def load_camera_calibration(path: str) -> Optional[CameraCalibration]:
 
 
 def normalize_angle(theta: float) -> float:
+    """
+    Normalizes an angle in radians to the range [-pi, pi].
+    """
     while theta > math.pi:
         theta -= 2 * math.pi
     while theta < -math.pi:
@@ -98,6 +116,9 @@ def normalize_angle(theta: float) -> float:
 
 
 def parse_action_label(decision_text: str) -> str:
+    """
+    Maps high-level decision text to a canonical action class.
+    """
     txt = (decision_text or "").upper()
     if "AVOID PERSON" in txt:
         return "AVOID_PERSON"
@@ -109,6 +130,9 @@ def parse_action_label(decision_text: str) -> str:
 
 
 def action_confidence_from_tracked(action_label: str, tracked: Dict[int, dict]) -> float:
+    """
+    Derives a confidence score for an action based on the confidence of relevant tracked objects.
+    """
     if not tracked:
         return 0.5 if action_label == "EXPLORE" else 0.0
     target_label = {
@@ -125,6 +149,10 @@ def action_confidence_from_tracked(action_label: str, tracked: Dict[int, dict]) 
 
 
 class LiveMapper:
+    """
+    Implements a real-time occupancy grid mapper with pose estimation, 
+    loop closure, and object-based mapping.
+    """
     def __init__(
         self,
         grid_size: int = 120,
@@ -155,6 +183,10 @@ class LiveMapper:
         depth_unit_scale: float = 1.0,
         inverse_depth: bool = False,
     ):
+        """
+        Initializes the mapper with configurable parameters for grid size, 
+        motion constraints, and mapping heuristics.
+        """
         if mapping_backend not in ("heuristic", "depth", "orb_slam_like"):
             raise ValueError("mapping_backend must be one of: heuristic, depth, orb_slam_like")
         self.grid_size = int(grid_size)
@@ -240,9 +272,15 @@ class LiveMapper:
         self.post_closure_alignment_dists: List[float] = []
 
     def mapping_pose(self) -> PoseSample:
+        """
+        Returns the current pose used for mapping, corrected for loop closures if enabled.
+        """
         return self.corrected_pose if self.loop_closure_enabled else self.pose
 
     def world_to_grid(self, x: float, y: float) -> Tuple[int, int]:
+        """
+        Converts metric world coordinates to discrete grid cell coordinates.
+        """
         gx = int(round(x / self.meters_per_cell))
         gy = int(round(y / self.meters_per_cell))
         gx = int(np.clip(gx, 0, self.grid_size - 1))
@@ -250,9 +288,15 @@ class LiveMapper:
         return gx, gy
 
     def grid_to_world(self, gx: int, gy: int) -> Tuple[float, float]:
+        """
+        Converts discrete grid cell coordinates to metric world coordinates.
+        """
         return gx * self.meters_per_cell, gy * self.meters_per_cell
 
     def _clip_pose_delta(self, tx: float, ty: float) -> Tuple[float, float]:
+        """
+        Clips the translation delta to stay within the configured maximum per-frame motion.
+        """
         mag = math.hypot(tx, ty)
         if mag <= self.max_translation_m_per_frame:
             return tx, ty
@@ -260,12 +304,18 @@ class LiveMapper:
         return tx * scale, ty * scale
 
     def _smooth_pose_delta(self, tx: float, ty: float) -> Tuple[float, float]:
+        """
+        Applies a moving average filter to the translation deltas for smoother trajectory.
+        """
         self.pose_delta_history.append((float(tx), float(ty)))
         sx = float(np.mean([p[0] for p in self.pose_delta_history]))
         sy = float(np.mean([p[1] for p in self.pose_delta_history]))
         return sx, sy
 
     def update_pose_from_orb(self, dx_px: float, dy_px: float, timestamp: float, motion_to_meter_scale: float) -> PoseSample:
+        """
+        Legacy wrapper for updating pose from pixel-based motion.
+        """
         return self.update_pose_from_flow(dx_px, dy_px, 0.0, timestamp, motion_to_meter_scale, flow_quality=1.0)
 
     def update_pose_from_flow(
@@ -277,8 +327,10 @@ class LiveMapper:
         motion_to_meter_scale: float,
         flow_quality: float = 1.0,
     ) -> PoseSample:
+        """
+        Updates the internal pose estimate based on camera optical flow and rotation.
+        """
         tx = float(dx_px) * float(motion_to_meter_scale)
-        # Image Y grows downward; invert for map/world coordinates.
         ty = -float(dy_px) * float(motion_to_meter_scale)
         q = float(np.clip(flow_quality, 0.0, 1.0))
         tx *= q
@@ -317,6 +369,9 @@ class LiveMapper:
         nominal_depth_m: float,
         flow_quality: float = 1.0,
     ) -> PoseSample:
+        """
+        Updates the pose using camera intrinsics and depth to estimate metric translation.
+        """
         if self.camera_calibration is None:
             raise ValueError("Camera calibration is required for calibrated pose updates")
         depth_m = max(1e-6, float(nominal_depth_m))
@@ -334,6 +389,9 @@ class LiveMapper:
         )
 
     def _find_loop_closure_candidate(self) -> Optional[Dict[str, float]]:
+        """
+        Searches the pose history for recent revisits to previously mapped areas.
+        """
         if not self.loop_closure_enabled:
             return None
         if len(self.pose_history) < self.loop_closure_min_frame_gap + 2:
@@ -364,6 +422,9 @@ class LiveMapper:
         return best
 
     def _apply_loop_closure_logic(self):
+        """
+        Implements the state machine for detecting and smoothing loop-closure corrections.
+        """
         if self.loop_closure_cooldown_remaining > 0:
             self.loop_closure_state = "cooldown"
             self.loop_closure_cooldown_remaining -= 1
@@ -398,6 +459,9 @@ class LiveMapper:
         self.loop_closure_cooldown_remaining = self.loop_closure_cooldown_frames
 
     def _update_corrected_pose(self):
+        """
+        Generates the corrected pose estimate by merging raw odometry with pending loop-closure deltas.
+        """
         prev_corr = self.corrected_pose_history[-1]
         dx_raw = self.pose.x - self.pose_history[-2].x if len(self.pose_history) > 1 else 0.0
         dy_raw = self.pose.y - self.pose_history[-2].y if len(self.pose_history) > 1 else 0.0
@@ -422,17 +486,25 @@ class LiveMapper:
         self.corrected_pose_grid_history.append(self.world_to_grid(new_pose.x, new_pose.y))
 
     def _range_from_area_ratio(self, area_ratio: float) -> float:
+        """
+        Estimates the distance to an object based on its relative bounding box area.
+        """
         area_ratio = max(1e-6, float(area_ratio))
-        # Heuristic inverse relationship: larger object -> closer obstacle.
         return float(np.clip(0.30 / math.sqrt(area_ratio), 0.4, 4.0))
 
     def _class_range_adjustment(self, label: str, rng: float) -> float:
+        """
+        Applies class-specific multipliers to the distance estimate for better accuracy.
+        """
         cfg = self.range_hint_by_label.get(label)
         if not cfg:
             return rng
         return float(np.clip(rng * float(cfg["multiplier"]), float(cfg["min"]), float(cfg["max"])))
 
     def _detection_anchor(self, det: dict, frame_shape: Sequence[int]) -> Tuple[float, float]:
+        """
+        Finds the base anchoring point (usually bottom-center) of a detected object.
+        """
         h, w = int(frame_shape[0]), int(frame_shape[1])
         if "bbox" in det:
             x1, y1, x2, y2 = det["bbox"]
@@ -444,6 +516,9 @@ class LiveMapper:
         return float(np.clip(cx, 0, w - 1)), float(np.clip(cy, 0, h - 1))
 
     def _depth_range_for_detection(self, det: dict, depth_map: Optional[np.ndarray]) -> Optional[float]:
+        """
+        Extracts a metric depth value for a detection from an external depth map.
+        """
         if depth_map is None:
             return None
         if depth_map.size == 0:
@@ -477,18 +552,22 @@ class LiveMapper:
         return float(np.clip(depth_value * self.depth_unit_scale, 0.2, 8.0))
 
     def _bearing_for_detection(self, cx: float, frame_width: int) -> float:
+        """
+        Calculates the angular bearing of a detection relative to the camera center.
+        """
         if self.camera_calibration is not None:
             return math.atan2(float(cx) - self.camera_calibration.cx, max(1e-6, self.camera_calibration.fx))
         return ((float(cx) / max(1.0, float(frame_width))) - 0.5) * math.radians(self.camera_fov_deg)
 
     def _weighted_step(self, base_value: float, confidence: float, strong: bool) -> float:
+        """
+        Scales a mapping update increment based on object detection confidence.
+        """
         if not self.confidence_weighting:
             return base_value * (1.0 if strong else 0.5)
         conf = float(np.clip(confidence, 0.0, 1.0))
         weight = 0.35 + (conf ** max(0.1, self.confidence_strength))
         
-        # IMPROVEMENT: High-Confidence Reinforcement
-        # If the AI is >90% sure, we boost the map update speed by 50%
         if conf > 0.90:
             weight *= 1.5
             
@@ -497,6 +576,9 @@ class LiveMapper:
         return base_value * weight
 
     def _is_persistent_detection(self, track_id: int, label: str, cell: Tuple[int, int]) -> bool:
+        """
+        Checks if a detection is stable across multiple frames before applying strong map updates.
+        """
         key = (str(label), int(track_id))
         hist = self.detection_cell_history.setdefault(key, deque(maxlen=self.obstacle_persistence_frames))
         hist.append(cell)
@@ -505,6 +587,9 @@ class LiveMapper:
         return len(set(hist)) <= 2
 
     def _smoothed_projection_cell(self, track_id: int, label: str, cell: Tuple[int, int]) -> Tuple[int, int]:
+        """
+        Reduces jitter in projected grid coordinates for tracked objects.
+        """
         key = (str(label), int(track_id))
         prev = self.object_projection_history.get(key)
         if prev is None:
@@ -517,6 +602,9 @@ class LiveMapper:
         return cell
 
     def _footprint_shape_for_label(self, label: str) -> str:
+        """
+        Determines the geometric shape used to mark an object in the grid.
+        """
         shape = self.obstacle_footprint_shape
         if self.obstacle_footprint_radius_cells == 0 and shape == "square":
             shape = self.default_footprint_shape
@@ -531,12 +619,13 @@ class LiveMapper:
         return shape
 
     def _footprint_radius_for_detection(self, center: Tuple[int, int], label: str, det: Optional[dict] = None) -> int:
+        """
+        Calculates the grid radius of an object's footprint based on its class and image size.
+        """
         radius = self.obstacle_footprint_radius_cells
         if radius <= 0:
             radius = int(self.default_footprint_radius_by_label.get(label, 0))
         
-        # IMPROVEMENT: "Social Distancing" Buffer
-        # If the object is a person, we give them an extra 20cm (2 cells) of space
         if label == "person":
             radius += 2
             
@@ -561,6 +650,9 @@ class LiveMapper:
         frame_shape: Sequence[int],
         depth_map: Optional[np.ndarray] = None,
     ) -> Tuple[Tuple[float, float], Tuple[int, int], Tuple[float, float]]:
+        """
+        Projects an image-space detection into metric 3D world coordinates.
+        """
         pose_ref = self.mapping_pose()
         h, w = int(frame_shape[0]), int(frame_shape[1])
         cx, cy = self._detection_anchor(det, frame_shape)
@@ -582,6 +674,9 @@ class LiveMapper:
         return (smooth_wx, smooth_wy), (smooth_gx, smooth_gy), (wx, wy)
 
     def _ray_cells(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """
+        Traces a ray between two grid points using Bresenham's algorithm.
+        """
         x0, y0 = start
         x1, y1 = end
         dx = abs(x1 - x0)
@@ -604,10 +699,16 @@ class LiveMapper:
         return cells
 
     def _record_cell_event(self, cell: Tuple[int, int], key: str):
+        """
+        Logs a grid cell update event for quality metrics.
+        """
         row = self.cell_event_counts.setdefault(cell, {"hit": 0, "free": 0})
         row[key] = row.get(key, 0) + 1
 
     def _obstacle_footprint_cells(self, center: Tuple[int, int], label: str = "", det: Optional[dict] = None) -> List[Tuple[int, int]]:
+        """
+        Generates the set of grid cells covered by an object's footprint.
+        """
         cx, cy = center
         radius = self._footprint_radius_for_detection(center, label, det=det)
         shape = self._footprint_shape_for_label(label)
@@ -636,6 +737,9 @@ class LiveMapper:
         timestamp: float,
         depth_map: Optional[np.ndarray] = None,
     ) -> List[MapEvent]:
+        """
+        Core mapping function: updates the grid with obstacles and free-space rays.
+        """
         self.grid = np.clip(self.grid * self.decay, 0.0, 1.0)
         pose_ref = self.mapping_pose()
         pose_cell = self.world_to_grid(pose_ref.x, pose_ref.y)
@@ -733,6 +837,9 @@ class LiveMapper:
         return events
 
     def render_map(self, out_size: int = 320) -> np.ndarray:
+        """
+        Renders the occupancy grid and robot trajectory into a visual BGR image.
+        """
         occ = (self.grid * 255.0).astype(np.uint8)
         bgr = cv2.cvtColor(occ, cv2.COLOR_GRAY2BGR)
 
@@ -753,6 +860,9 @@ class LiveMapper:
         return cv2.resize(bgr, (out_size, out_size), interpolation=cv2.INTER_NEAREST)
 
     def pose_stats(self) -> dict:
+        """
+        Calculates path length and sample count statistics for the run.
+        """
         if len(self.pose_history) < 2:
             return {"path_length_m": 0.0, "pose_samples": len(self.pose_history)}
         dist = 0.0
@@ -770,6 +880,9 @@ class LiveMapper:
         }
 
     def backend_summary(self) -> dict:
+        """
+        Provides a summary of the active mapping backend and configuration.
+        """
         return {
             "backend": self.mapping_backend,
             "status": self.backend_status,
@@ -780,6 +893,9 @@ class LiveMapper:
         }
 
     def event_summary(self) -> dict:
+        """
+        Summarizes map update events and unique cell activations.
+        """
         anchor_events = [e for e in self.map_events if e.event_type == "obstacle_anchor"]
         footprint_events = [e for e in self.map_events if e.event_type == "obstacle_mark"]
         return {
@@ -791,417 +907,26 @@ class LiveMapper:
         }
 
     def loop_closure_summary(self) -> dict:
+        """
+        Summarizes loop closure detection and correction metrics.
+        """
         if self.loop_closure_correction_records:
             mean_t = float(np.mean([r["translation_m"] for r in self.loop_closure_correction_records]))
             mean_h = float(np.mean([r["heading_rad"] for r in self.loop_closure_correction_records]))
         else:
             mean_t = 0.0
             mean_h = 0.0
+        
+        alignment_score = 0.0
         if self.post_closure_alignment_dists:
-            post_align = float(np.mean(self.post_closure_alignment_dists))
-        else:
-            post_align = 0.0
+            alignment_score = float(np.mean(self.post_closure_alignment_dists))
+
         return {
             "state": self.loop_closure_state,
-            "corrections_applied": int(self.loop_closure_corrections_applied),
-            "candidates": int(self.loop_closure_candidate_count),
-            "rejections": int(self.loop_closure_rejections),
+            "candidates_detected": self.loop_closure_candidate_count,
+            "corrections_applied": self.loop_closure_corrections_applied,
+            "rejections": self.loop_closure_rejections,
             "mean_correction_translation_m": mean_t,
             "mean_correction_heading_rad": mean_h,
-            "post_closure_path_alignment_score": float(1.0 / (1.0 + post_align)),
-            "post_closure_path_alignment_mean_dist_m": post_align,
+            "post_closure_path_alignment_score": alignment_score,
         }
-
-
-def _micro_prf(tp: int, fp: int, fn: int) -> dict:
-    precision = float(tp) / float(tp + fp) if (tp + fp) > 0 else 0.0
-    recall = float(tp) / float(tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
-    return {"precision": precision, "recall": recall, "f1": f1, "tp": int(tp), "fp": int(fp), "fn": int(fn)}
-
-
-def compute_label_metrics(gt_labels_by_frame: Dict[int, str], pred_actions_by_frame: Dict[int, str]) -> dict:
-    frames = sorted(set(gt_labels_by_frame.keys()) & set(pred_actions_by_frame.keys()))
-    if not frames:
-        return {"available": False, "reason": "No overlapping frame labels"}
-    y_true = [gt_labels_by_frame[f] for f in frames]
-    y_pred = [pred_actions_by_frame[f] for f in frames]
-    accuracy = float(sum(1 for t, p in zip(y_true, y_pred) if t == p)) / float(len(frames))
-    per_class = {}
-    macro_f1 = 0.0
-    for cls in ACTION_CLASSES:
-        tp = sum(1 for t, p in zip(y_true, y_pred) if t == cls and p == cls)
-        fp = sum(1 for t, p in zip(y_true, y_pred) if t != cls and p == cls)
-        fn = sum(1 for t, p in zip(y_true, y_pred) if t == cls and p != cls)
-        stats = _micro_prf(tp, fp, fn)
-        per_class[cls] = stats
-        macro_f1 += stats["f1"]
-    macro_f1 /= float(len(ACTION_CLASSES))
-    return {
-        "available": True,
-        "frames_evaluated": len(frames),
-        "accuracy": accuracy,
-        "macro_f1": macro_f1,
-        "per_class": per_class,
-    }
-
-
-def compute_loop_closure_drift(
-    poses: Sequence[PoseSample],
-    closure_radius_m: float = 0.35,
-    min_frame_gap: int = 30,
-) -> dict:
-    if len(poses) < 2:
-        return {"available": False, "reason": "Insufficient pose samples"}
-    trans_errors = []
-    heading_errors = []
-    for i in range(len(poses)):
-        pi = poses[i]
-        for j in range(i + min_frame_gap, len(poses)):
-            pj = poses[j]
-            d = math.hypot(pj.x - pi.x, pj.y - pi.y)
-            if d <= closure_radius_m:
-                trans_errors.append(d)
-                heading_errors.append(abs(normalize_angle(pj.theta - pi.theta)))
-    if not trans_errors:
-        return {"available": False, "reason": "No loop-closure candidates detected"}
-    return {
-        "available": True,
-        "closure_pairs": len(trans_errors),
-        "translation_error_mean_m": float(np.mean(trans_errors)),
-        "translation_error_max_m": float(np.max(trans_errors)),
-        "heading_error_mean_rad": float(np.mean(heading_errors)),
-        "heading_error_max_rad": float(np.max(heading_errors)),
-    }
-
-
-def compute_map_consistency_score(cell_event_counts: Dict[Tuple[int, int], Dict[str, int]], min_events: int = 2) -> dict:
-    scores = []
-    for cell_counts in cell_event_counts.values():
-        hit = int(cell_counts.get("hit", 0))
-        free = int(cell_counts.get("free", 0))
-        total = hit + free
-        if total < min_events:
-            continue
-        scores.append(float(max(hit, free)) / float(total))
-    if not scores:
-        return {"available": False, "reason": "No revisited cells with enough events"}
-    return {
-        "available": True,
-        "cell_count": len(scores),
-        "score_mean": float(np.mean(scores)),
-        "score_min": float(np.min(scores)),
-    }
-
-
-def compute_pose_jitter_score(poses: Sequence[PoseSample], min_motion_m: float = 0.002) -> dict:
-    if len(poses) < 4:
-        return {"available": False, "reason": "Insufficient pose samples"}
-    deltas_all = []
-    headings_all = []
-    for i in range(1, len(poses)):
-        a, b = poses[i - 1], poses[i]
-        deltas_all.append(math.hypot(b.x - a.x, b.y - a.y))
-        headings_all.append(normalize_angle(b.theta - a.theta))
-    delta_all_arr = np.array(deltas_all, dtype=np.float32)
-    moving_mask = delta_all_arr >= float(min_motion_m)
-    if int(np.sum(moving_mask)) < 3:
-        return {"available": False, "reason": "Insufficient moving pose deltas"}
-    delta_arr = delta_all_arr[moving_mask]
-    head_arr = np.array(headings_all, dtype=np.float32)[moving_mask]
-    motion_cv = float(np.std(delta_arr) / (float(np.mean(delta_arr)) + 1e-6))
-    heading_std = float(np.std(head_arr))
-    jitter_score = float(1.0 / (1.0 + motion_cv + heading_std))
-    return {
-        "available": True,
-        "moving_samples": int(delta_arr.size),
-        "total_samples": int(delta_all_arr.size),
-        "min_motion_m": float(min_motion_m),
-        "motion_cv": motion_cv,
-        "heading_std_rad": heading_std,
-        "jitter_score": jitter_score,
-    }
-
-
-def compute_obstacle_persistence_stability(frame_obstacles: Dict[int, Set[Tuple[int, int]]]) -> dict:
-    frames = sorted(frame_obstacles.keys())
-    if len(frames) < 3:
-        return {"available": False, "reason": "Insufficient obstacle frames"}
-    ious = []
-    for i in range(1, len(frames)):
-        prev_set = frame_obstacles.get(frames[i - 1], set())
-        cur_set = frame_obstacles.get(frames[i], set())
-        union = prev_set | cur_set
-        if not union:
-            continue
-        iou = float(len(prev_set & cur_set)) / float(len(union))
-        ious.append(iou)
-    if not ious:
-        return {"available": False, "reason": "No obstacle overlap samples"}
-    return {
-        "available": True,
-        "samples": len(ious),
-        "iou_mean": float(np.mean(ious)),
-        "iou_min": float(np.min(ious)),
-    }
-
-
-def compute_occupancy_confidence_concentration(grid: np.ndarray) -> dict:
-    if grid is None or grid.size == 0:
-        return {"available": False, "reason": "Empty occupancy grid"}
-    occ = np.clip(grid.astype(np.float32), 1e-6, 1.0 - 1e-6)
-    entropy = -(occ * np.log(occ) + (1.0 - occ) * np.log(1.0 - occ))
-    norm_entropy = float(np.mean(entropy) / math.log(2.0))
-    concentration = float(1.0 - norm_entropy)
-    return {
-        "available": True,
-        "entropy_mean_bits": float(np.mean(entropy) / math.log(2.0)),
-        "concentration_score": concentration,
-    }
-
-
-def compute_mapping_quality_summary(
-    loop_closure_drift: dict,
-    map_consistency_score: dict,
-    pose_jitter: dict,
-    obstacle_persistence: dict,
-    occupancy_concentration: dict,
-    obstacle_precision_recall: dict,
-    require_benchmark: bool = True,
-    threshold_overrides: Optional[Dict[str, float]] = None,
-) -> dict:
-    thresholds = {
-        "map_consistency_min": 0.70,
-        "pose_jitter_min": 0.40,
-        "obstacle_persistence_iou_min": 0.20,
-        "occupancy_concentration_min": 0.08,
-        "benchmark_obstacle_f1_min": 0.45,
-    }
-    if threshold_overrides:
-        for key, value in threshold_overrides.items():
-            if key in thresholds:
-                thresholds[key] = float(value)
-    checks = {}
-    checks["map_consistency"] = bool(map_consistency_score.get("available")) and float(map_consistency_score.get("score_mean", 0.0)) >= thresholds["map_consistency_min"]
-    checks["pose_jitter"] = bool(pose_jitter.get("available")) and float(pose_jitter.get("jitter_score", 0.0)) >= thresholds["pose_jitter_min"]
-    checks["obstacle_persistence"] = bool(obstacle_persistence.get("available")) and float(obstacle_persistence.get("iou_mean", 0.0)) >= thresholds["obstacle_persistence_iou_min"]
-    checks["occupancy_concentration"] = bool(occupancy_concentration.get("available")) and float(occupancy_concentration.get("concentration_score", 0.0)) >= thresholds["occupancy_concentration_min"]
-    if require_benchmark:
-        checks["benchmark_obstacle_f1"] = bool(obstacle_precision_recall.get("available")) and float(obstacle_precision_recall.get("f1", 0.0)) >= thresholds["benchmark_obstacle_f1_min"]
-    else:
-        checks["benchmark_obstacle_f1"] = True
-    missing_benchmark = require_benchmark and not bool(obstacle_precision_recall.get("available"))
-    promotable = all(checks.values()) and not missing_benchmark
-    lane = "benchmark_supervised" if bool(obstacle_precision_recall.get("available")) else "live_unsupervised"
-    status = "promotable" if promotable else ("insufficient_evidence" if missing_benchmark else "not_promotable")
-    return {
-        "lane": lane,
-        "status": status,
-        "promotable": bool(promotable),
-        "require_benchmark": bool(require_benchmark),
-        "thresholds": thresholds,
-        "checks": checks,
-        "missing_benchmark": bool(missing_benchmark),
-    }
-
-
-def compute_obstacle_precision_recall(
-    gt_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
-    pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
-    match_radius_cells: int = 0,
-) -> dict:
-    frames = sorted(set(gt_obstacles_by_frame.keys()) & set(pred_obstacles_by_frame.keys()))
-    if not frames:
-        return {"available": False, "reason": "No overlapping obstacle frames"}
-    radius = max(0, int(match_radius_cells))
-    tp = fp = fn = 0
-    for f in frames:
-        gt = gt_obstacles_by_frame.get(f, set())
-        pred = pred_obstacles_by_frame.get(f, set())
-        if radius == 0:
-            frame_tp = len(gt & pred)
-            frame_fp = len(pred - gt)
-            frame_fn = len(gt - pred)
-        else:
-            unmatched_gt = set(gt)
-            frame_tp = 0
-            for cell in sorted(pred):
-                if not unmatched_gt:
-                    break
-                nearest = min(
-                    unmatched_gt,
-                    key=lambda g: (max(abs(cell[0] - g[0]), abs(cell[1] - g[1])), abs(cell[0] - g[0]) + abs(cell[1] - g[1])),
-                )
-                if max(abs(cell[0] - nearest[0]), abs(cell[1] - nearest[1])) <= radius:
-                    unmatched_gt.remove(nearest)
-                    frame_tp += 1
-            frame_fp = max(0, len(pred) - frame_tp)
-            frame_fn = len(unmatched_gt)
-        tp += frame_tp
-        fp += frame_fp
-        fn += frame_fn
-    out = _micro_prf(tp, fp, fn)
-    out.update({"available": True, "frames_evaluated": len(frames), "match_radius_cells": radius})
-    return out
-
-
-def _connected_cell_components(cells: Set[Tuple[int, int]]) -> List[Set[Tuple[int, int]]]:
-    remaining = set(cells)
-    components = []
-    while remaining:
-        start = remaining.pop()
-        component = {start}
-        queue = deque([start])
-        while queue:
-            x, y = queue.popleft()
-            for nx in range(x - 1, x + 2):
-                for ny in range(y - 1, y + 2):
-                    cell = (nx, ny)
-                    if cell not in remaining:
-                        continue
-                    remaining.remove(cell)
-                    component.add(cell)
-                    queue.append(cell)
-        components.append(component)
-    return components
-
-
-def _component_distance(a: Set[Tuple[int, int]], b: Set[Tuple[int, int]]) -> int:
-    if not a or not b:
-        return 10**9
-    return min(max(abs(ax - bx), abs(ay - by)) for ax, ay in a for bx, by in b)
-
-
-def compute_obstacle_object_precision_recall(
-    gt_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
-    pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
-    match_radius_cells: int = 0,
-) -> dict:
-    gt_components_by_frame = {frame: _connected_cell_components(cells) for frame, cells in gt_obstacles_by_frame.items()}
-    return compute_obstacle_object_precision_recall_from_components(
-        gt_components_by_frame=gt_components_by_frame,
-        pred_obstacles_by_frame=pred_obstacles_by_frame,
-        match_radius_cells=match_radius_cells,
-    )
-
-
-def compute_obstacle_object_precision_recall_from_components(
-    gt_components_by_frame: Dict[int, List[Set[Tuple[int, int]]]],
-    pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
-    match_radius_cells: int = 0,
-) -> dict:
-    frames = sorted(set(gt_components_by_frame.keys()) & set(pred_obstacles_by_frame.keys()))
-    if not frames:
-        return {"available": False, "reason": "No overlapping obstacle frames"}
-    radius = max(0, int(match_radius_cells))
-    tp = fp = fn = 0
-    for f in frames:
-        gt_components = [set(component) for component in gt_components_by_frame.get(f, [])]
-        pred_components = _connected_cell_components(pred_obstacles_by_frame.get(f, set()))
-        matched_gt: Set[int] = set()
-        for pred_component in pred_components:
-            best = None
-            for idx, gt_component in enumerate(gt_components):
-                if idx in matched_gt:
-                    continue
-                distance = _component_distance(pred_component, gt_component)
-                if distance <= radius and (best is None or distance < best[0]):
-                    best = (distance, idx)
-            if best is None:
-                fp += 1
-            else:
-                matched_gt.add(best[1])
-                tp += 1
-        fn += max(0, len(gt_components) - len(matched_gt))
-    out = _micro_prf(tp, fp, fn)
-    out.update(
-        {
-            "available": True,
-            "frames_evaluated": len(frames),
-            "match_radius_cells": radius,
-            "metric": "object_components",
-        }
-    )
-    return out
-
-
-def select_benchmark_obstacle_metric(cell_metric: dict, object_metric: dict, configured_metric: str = "cell") -> dict:
-    configured_metric = str(configured_metric or "cell")
-    preferred_metric = configured_metric
-    reason = "configured_metric"
-    if configured_metric == "cell" and object_metric.get("available") and cell_metric.get("available"):
-        if float(object_metric.get("f1", 0.0)) >= float(cell_metric.get("f1", 0.0)) + 0.05:
-            preferred_metric = "object"
-            reason = "object_metric_better_matches_blob_annotations"
-    selected = object_metric if preferred_metric == "object" else cell_metric
-    alternate = cell_metric if preferred_metric == "object" else object_metric
-    return {
-        "selected_metric": preferred_metric,
-        "selection_reason": reason,
-        "primary": selected,
-        "alternate_metric": "cell" if preferred_metric == "object" else "object",
-        "alternate": alternate,
-    }
-
-
-def load_run_annotations(path: str) -> dict:
-    if not path:
-        return {"available": False, "reason": "No annotation file provided"}
-    if not os.path.exists(path):
-        return {"available": False, "reason": f"Annotation file not found: {path}"}
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    labels = {}
-    for row in raw.get("frame_labels", []):
-        if "frame" in row and "label" in row:
-            labels[int(row["frame"])] = str(row["label"]).strip().upper()
-    obstacles = {}
-    obstacle_components = {}
-    for row in raw.get("obstacles", []):
-        if "frame" not in row:
-            continue
-        frame = int(row["frame"])
-        if "component_cells" in row:
-            component_cells = set()
-            for cell in row.get("component_cells", []):
-                if not isinstance(cell, (list, tuple)) or len(cell) != 2:
-                    continue
-                gx, gy = int(cell[0]), int(cell[1])
-                component_cells.add((gx, gy))
-                obstacles.setdefault(frame, set()).add((gx, gy))
-            if component_cells:
-                obstacle_components.setdefault(frame, []).append(component_cells)
-        elif "grid_cells" in row:
-            component_cells = set()
-            for cell in row.get("grid_cells", []):
-                if not isinstance(cell, (list, tuple)) or len(cell) != 2:
-                    continue
-                gx, gy = int(cell[0]), int(cell[1])
-                component_cells.add((gx, gy))
-                obstacles.setdefault(frame, set()).add((gx, gy))
-            if component_cells:
-                obstacle_components.setdefault(frame, []).append(component_cells)
-        elif "grid_xy" in row:
-            gx, gy = int(row["grid_xy"][0]), int(row["grid_xy"][1])
-            cell = (gx, gy)
-            obstacles.setdefault(frame, set()).add(cell)
-            obstacle_components.setdefault(frame, []).append({cell})
-    return {
-        "available": True,
-        "frame_labels": labels,
-        "obstacles_by_frame": obstacles,
-        "obstacle_components_by_frame": obstacle_components,
-        "raw": raw,
-    }
-
-
-def write_joint_report(report_path: str, payload: dict):
-    report_dir = os.path.dirname(report_path)
-    if report_dir:
-        os.makedirs(report_dir, exist_ok=True)
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-
-
-def dataclass_to_dict(obj):
-    return asdict(obj)

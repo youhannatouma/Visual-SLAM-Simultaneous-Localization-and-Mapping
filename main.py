@@ -35,6 +35,10 @@ from reasoning import ReasoningEngine
 
 
 class SharedState:
+    """
+    Manages the application state across multiple threads, including video frames,
+    object detections, and navigation decisions.
+    """
     def __init__(self):
         self.frame = None
         self.detections = []
@@ -57,6 +61,10 @@ DEFAULT_DETECTION_MODEL_PATH = "yolov8n.pt"
 
 
 def detection_worker(model_path="yolov8n.pt", det_confidence=0.25, det_imgsz=320):
+    """
+    Continuous background worker that runs object detection on current frames
+    using the YOLO model.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[Detection] Running on: {device.upper()}")
     model = YOLO(model_path)
@@ -96,6 +104,10 @@ def detection_worker(model_path="yolov8n.pt", det_confidence=0.25, det_imgsz=320
 
 
 def reasoning_worker():
+    """
+    Background worker that determines navigation decisions based on detected objects
+    and motion using the ReasoningEngine.
+    """
     engine = ReasoningEngine()
     with state.lock:
         state.engine = engine
@@ -139,6 +151,9 @@ STATE_COLOR = {
 
 
 def draw_hud_panel(frame, x, y, w, h, alpha=0.55):
+    """
+    Draws a semi-transparent background panel for HUD elements.
+    """
     overlay = frame.copy()
     cv2.rectangle(overlay, (x, y), (x + w, y + h), (15, 15, 15), -1)
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
@@ -146,10 +161,16 @@ def draw_hud_panel(frame, x, y, w, h, alpha=0.55):
 
 
 def draw_text(frame, text, pos, color=C_WHITE, scale=0.55, thickness=1):
+    """
+    Helper function to render anti-aliased text on a frame.
+    """
     cv2.putText(frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv2.LINE_AA)
 
 
 def draw_bbox(frame, obj, obj_id):
+    """
+    Draws stylized bounding box corners and identity labels for tracked objects.
+    """
     x1, y1, x2, y2 = obj["bbox"]
     label = obj["label"]
     conf = obj["confidence"]
@@ -176,6 +197,9 @@ def draw_bbox(frame, obj, obj_id):
 
 
 def draw_motion_arrow(frame, arrow):
+    """
+    Renders an arrow representing the detected camera motion relative to the center.
+    """
     cx, cy = 320, 240
     ex, ey = cx + arrow[0], cy + arrow[1]
     cv2.arrowedLine(frame, (cx, cy), (ex, ey), C_GREEN, 2, tipLength=0.3)
@@ -183,6 +207,9 @@ def draw_motion_arrow(frame, arrow):
 
 
 def draw_confidence_bars(frame, detections, panel_x, start_y):
+    """
+    Renders confidence score bars for the top object detections in the HUD.
+    """
     for i, det in enumerate(detections[:4]):
         y = start_y + i * 22
         lbl = det["label"]
@@ -196,6 +223,10 @@ def draw_confidence_bars(frame, detections, panel_x, start_y):
 
 
 def robust_orb_flow_delta(prev_kp, prev_des, kp, des, matcher, top_k: int = 80):
+    """
+    Estimates camera motion between consecutive frames using ORB feature matching
+    and robust RANSAC-based affine estimation.
+    """
     if prev_des is None or des is None or len(prev_des) < 8 or len(des) < 8:
         return 0.0, 0.0, 0.0, 0.0
     matches = matcher.match(prev_des, des)
@@ -229,6 +260,9 @@ def robust_orb_flow_delta(prev_kp, prev_des, kp, des, matcher, top_k: int = 80):
 
 
 def parse_args():
+    """
+    Parses command-line arguments for configuring video source, models, and mapping parameters.
+    """
     p = argparse.ArgumentParser(description="AI Visual Navigation System")
     p.add_argument("--video", default="", help="Path to a video file. Empty uses webcam.")
     p.add_argument("--benchmark-video", default="", help="Benchmark video path. Equivalent to --video but documented for mapping validation runs.")
@@ -295,6 +329,9 @@ def parse_args():
 
 
 def _release_file_check(path: str, label: str):
+    """
+    Verifies the existence of a file path before application initialization.
+    """
     if not path:
         raise FileNotFoundError(f"{label} path is empty")
     if not os.path.exists(path):
@@ -302,6 +339,9 @@ def _release_file_check(path: str, label: str):
 
 
 def validate_release_inputs(args):
+    """
+    Validates all critical model and data paths required for system operation.
+    """
     _release_file_check(DEFAULT_DETECTION_MODEL_PATH, "YOLO weights")
     _release_file_check(DEFAULT_REASONING_MODEL_PATH, "Reasoning model checkpoint")
     if args.video:
@@ -313,6 +353,10 @@ def validate_release_inputs(args):
 
 
 def main():
+    """
+    Main entry point for the AI Visual Navigation System. Initializes resources,
+    starts background workers, and manages the primary processing and display loop.
+    """
     args = parse_args()
     if args.benchmark_video:
         if args.video and args.video != args.benchmark_video:
@@ -561,8 +605,6 @@ def main():
         )
         pred_actions_by_frame[frame_idx] = action_label
 
-        # Batch all semi-transparent HUD panels into one overlay pass
-        # instead of a full frame copy+blend per panel.
         overlay = out.copy()
         cv2.rectangle(overlay, (0, 0), (640, 38), (15, 15, 15), -1)
         cv2.rectangle(overlay, (0, 38), (175, 238), (15, 15, 15), -1)
@@ -576,7 +618,6 @@ def main():
             cv2.rectangle(overlay, (0, 450), (640, 480), (15, 15, 15), -1)
         cv2.addWeighted(overlay, 0.55, out, 0.45, 0, out)
 
-        # Panel borders
         cv2.rectangle(out, (0, 0), (640, 38), (60, 60, 60), 1)
         cv2.rectangle(out, (0, 38), (175, 238), (60, 60, 60), 1)
         if show_dets_panel:

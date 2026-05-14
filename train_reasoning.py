@@ -19,6 +19,9 @@ REAL_SOURCE_TYPES = {"real_media", "manual_live"}
 
 
 def normalize_optional_string(value):
+    """
+    Ensures string inputs are consistently formatted and handles NaN/None values.
+    """
     if value is None:
         return ""
     if isinstance(value, float) and np.isnan(value):
@@ -27,6 +30,9 @@ def normalize_optional_string(value):
 
 
 def parse_class_weight_targets(text):
+    """
+    Parses a string of LABEL:WEIGHT pairs into a dictionary for sampling bias configuration.
+    """
     targets = {}
     if not text:
         return targets
@@ -61,6 +67,9 @@ def parse_class_weight_targets(text):
 
 
 def load_clean_frame(csv_path, return_clean_df=False):
+    """
+    Loads training data from CSV, validates feature column counts, and filters out invalid or non-canonical labels.
+    """
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Training file not found: {csv_path}")
 
@@ -105,7 +114,13 @@ def load_clean_frame(csv_path, return_clean_df=False):
 
 
 class SequenceDataset(Dataset):
+    """
+    A PyTorch Dataset that yields sliding-window sequences of feature vectors for temporal reasoning.
+    """
     def __init__(self, csv_path, sequence_length=SEQUENCE_LENGTH):
+        """
+        Initializes the dataset by loading and cleaning the CSV data into memory.
+        """
         self.features, self.labels, self.feature_cols, self.cleaned_df = load_clean_frame(
             csv_path, return_clean_df=True
         )
@@ -119,9 +134,15 @@ class SequenceDataset(Dataset):
             )
 
     def __len__(self):
+        """
+        Returns the number of possible overlapping sequences in the dataset.
+        """
         return len(self.features) - self.sequence_length + 1
 
     def __getitem__(self, idx):
+        """
+        Retrieves a single training sequence and its corresponding target label.
+        """
         x = self.features[idx:idx + self.sequence_length]
         y = self.labels[idx + self.sequence_length - 1]
 
@@ -137,6 +158,9 @@ class SequenceDataset(Dataset):
         hard_negative_weight,
         class_target_weights,
     ):
+        """
+        Generates per-sample weights for WeightedRandomSampler based on data source and review status.
+        """
         weights = np.ones(len(self), dtype=np.float32)
         if len(weights) == 0:
             return weights
@@ -169,7 +193,11 @@ class SequenceDataset(Dataset):
 
         return weights
         
+
 def evaluate_model(model, dataset, batch_size, device):
+    """
+    Computes overall accuracy and collects true/predicted labels over a dataset.
+    """
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     model.eval()
 
@@ -197,6 +225,9 @@ def evaluate_model(model, dataset, batch_size, device):
 
 
 def compute_classification_metrics(y_true, y_pred, num_classes):
+    """
+    Calculates detailed precision, recall, and F1 scores for each class.
+    """
     confusion = np.zeros((num_classes, num_classes), dtype=np.int64)
     for t, p in zip(y_true, y_pred):
         confusion[t, p] += 1
@@ -223,6 +254,9 @@ def compute_classification_metrics(y_true, y_pred, num_classes):
 
 
 def save_confusion_matrix(confusion, output_path):
+    """
+    Generates and saves a visual heatmap of the classification confusion matrix.
+    """
     fig, ax = plt.subplots(figsize=(6, 5))
     im = ax.imshow(confusion, cmap="Blues")
     ax.figure.colorbar(im, ax=ax)
@@ -245,6 +279,9 @@ def save_confusion_matrix(confusion, output_path):
 
 
 def evaluate_optional_dataset(model, csv_path, batch_size, device):
+    """
+    Helper to run full evaluation on an optional secondary test dataset.
+    """
     if not csv_path:
         return None
     if not os.path.exists(csv_path):
@@ -272,6 +309,9 @@ def evaluate_optional_dataset(model, csv_path, batch_size, device):
 
 
 def set_seed(seed):
+    """
+    Configures fixed seeds for all random number generators to ensure reproducibility.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -282,6 +322,9 @@ def set_seed(seed):
 
 
 def build_loss(label_smoothing):
+    """
+    Constructs the loss function with optional label smoothing.
+    """
     if label_smoothing <= 0.0:
         return nn.CrossEntropyLoss()
     try:
@@ -301,7 +344,7 @@ def train(
     lr,
     weight_decay,
     label_smoothing,
-    fresh_real_eval_path,
+     fresh_real_eval_path,
     algorithm,
     seed,
     training_profile,
@@ -309,6 +352,9 @@ def train(
     hard_negative_weight,
     class_target_weights,
 ):
+    """
+    Main training loop: manages data loading, model optimization, and metric reporting.
+    """
     if algorithm.lower() != "mlp":
         raise ValueError("Only MLP is supported for reasoning training in this project")
 
@@ -494,6 +540,9 @@ def train(
 
 
 def parse_args():
+    """
+    Defines and parses command-line arguments for training configuration.
+    """
     parser = argparse.ArgumentParser(description="Train reasoning model with train/val/test splits")
     parser.add_argument("--train", default="data/processed/train.csv", help="Path to train CSV")
     parser.add_argument("--val", default="data/processed/val.csv", help="Path to validation CSV")
