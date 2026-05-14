@@ -29,9 +29,16 @@ def parse_args():
     return parser.parse_args()
 
 
-def rand_bbox_around(rng, cx, cy, base_w, base_h, jitter=0.25):
-    w = int(max(16, base_w * (1 + rng.uniform(-jitter, jitter))))
-    h = int(max(16, base_h * (1 + rng.uniform(-jitter, jitter))))
+def rand_bbox_around(rng, cx, cy, base_w, base_h, jitter=0.45):
+    # Aggressive aspect ratio jitter to simulate different angles (front, side, back)
+    aspect_jitter = rng.uniform(0.6, 1.4)
+    w = int(max(12, base_w * (1 + rng.uniform(-jitter, jitter)) * aspect_jitter))
+    h = int(max(12, base_h * (1 + rng.uniform(-jitter, jitter)) / aspect_jitter))
+    
+    # Center jitter to simulate imperfect YOLO detections
+    cx += rng.integers(-int(w * 0.1), int(w * 0.1) + 1)
+    cy += rng.integers(-int(h * 0.1), int(h * 0.1) + 1)
+
     x1 = int(np.clip(cx - w // 2, 0, FRAME_W - 2))
     y1 = int(np.clip(cy - h // 2, 0, FRAME_H - 2))
     x2 = int(np.clip(x1 + w, x1 + 1, FRAME_W - 1))
@@ -54,13 +61,13 @@ def scene_avoid_person(rng):
     detections = []
     px = int(np.clip(rng.normal(FRAME_CENTER[0], 70), 60, FRAME_W - 60))
     py = int(np.clip(rng.normal(FRAME_CENTER[1], 60), 60, FRAME_H - 60))
-    person_bbox, person_area = rand_bbox_around(rng, px, py, base_w=120, base_h=230, jitter=0.3)
+    person_bbox, person_area = rand_bbox_around(rng, px, py, base_w=120, base_h=230, jitter=0.5)
     detections.append(make_det("person", rng.uniform(0.75, 0.99), (px, py), person_bbox, person_area))
 
     if rng.random() < 0.7:
         cx = int(np.clip(rng.normal(FRAME_CENTER[0] - 140, 120), 40, FRAME_W - 40))
         cy = int(np.clip(rng.normal(FRAME_CENTER[1] + 40, 100), 40, FRAME_H - 40))
-        b, a = rand_bbox_around(rng, cx, cy, 110, 120, 0.35)
+        b, a = rand_bbox_around(rng, cx, cy, 110, 120, 0.55)
         detections.append(make_det("chair", rng.uniform(0.45, 0.9), (cx, cy), b, a))
 
     if rng.random() < 0.6:
@@ -76,7 +83,7 @@ def scene_move_to_chair(rng):
     detections = []
     cx = int(np.clip(rng.normal(FRAME_CENTER[0], 90), 50, FRAME_W - 50))
     cy = int(np.clip(rng.normal(FRAME_CENTER[1] + 20, 80), 50, FRAME_H - 50))
-    chair_bbox, chair_area = rand_bbox_around(rng, cx, cy, base_w=130, base_h=140, jitter=0.35)
+    chair_bbox, chair_area = rand_bbox_around(rng, cx, cy, base_w=130, base_h=140, jitter=0.55)
     detections.append(make_det("chair", rng.uniform(0.72, 0.99), (cx, cy), chair_bbox, chair_area))
 
     if rng.random() < 0.4:

@@ -1,24 +1,33 @@
 {
   "input_glob": "data/raw/*.csv",
   "input_files": [
-    "data/raw/curated_real_balanced.csv",
-    "data/raw/media_labeled_batch_A_real_corrected.csv",
-    "data/raw/media_labeled_batch_B_real_corrected.csv",
-    "data/raw/media_labeled_batch_D_real.csv",
-    "data/raw/media_labeled_batch_I_real.csv",
-    "data/raw/media_labeled_batch_J_real.csv",
-    "data/raw/media_labeled_batch_K_real.csv",
-    "data/raw/media_labeled_stage2_check_table_train_20260506.csv",
-    "data/raw/media_labeled_stage2_curated_train_20260506.csv",
-    "data/raw/session_20260507_002204.csv",
-    "data/raw/session_20260507_162210.csv",
-    "data/raw/session_20260507_163015.csv",
-    "data/raw/session_20260508_180556.csv",
-    "data/raw/session_20260508_181712.csv",
-    "data/raw/session_vid1_fixed.csv",
-    "data/raw/session_vid2_fixed.csv",
-    "data/raw/session_vid3_fixed.csv",
-    "data/raw/session_vid4_fixed.csv"
+    "data/raw\\curated_real_balanced.csv",
+    "data/raw\\media_labeled_batch_A_real_corrected.csv",
+    "data/raw\\media_labeled_batch_B_real_corrected.csv",
+    "data/raw\\media_labeled_batch_D_real.csv",
+    "data/raw\\media_labeled_batch_I_real.csv",
+    "data/raw\\media_labeled_batch_J_real.csv",
+    "data/raw\\media_labeled_batch_K_real.csv",
+    "data/raw\\media_labeled_img2267_2_20260514_120100.csv",
+    "data/raw\\media_labeled_img2269_20260514_122418.csv",
+    "data/raw\\media_labeled_img2270_20260514_124341.csv",
+    "data/raw\\media_labeled_img2271_20260514_124341.csv",
+    "data/raw\\media_labeled_img2272_20260514_130217.csv",
+    "data/raw\\media_labeled_img2273_20260514_130217.csv",
+    "data/raw\\media_labeled_img2274_20260514_130217.csv",
+    "data/raw\\media_labeled_img2275_20260514_130217.csv",
+    "data/raw\\media_labeled_stage2_check_table_train_20260506.csv",
+    "data/raw\\media_labeled_stage2_curated_train_20260506.csv",
+    "data/raw\\session_20260507_002204.csv",
+    "data/raw\\session_20260507_162210.csv",
+    "data/raw\\session_20260507_163015.csv",
+    "data/raw\\session_20260508_180556.csv",
+    "data/raw\\session_20260508_181712.csv",
+    "data/raw\\session_vid1_fixed.csv",
+    "data/raw\\session_vid2_fixed.csv",
+    "data/raw\\session_vid3_fixed.csv",
+    "data/raw\\session_vid4_fixed.csv",
+    "data/raw\\simulated_room_people_chairs_tables_20260514_151245.csv"
   ],
   "balance": "oversample",
   "seed": 42,
@@ -28,63 +37,44 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 1236,
-    "rows_after_dropna": 1236,
-    "rows_after_finite_check": 1236,
-    "rows_after_label_filter": 1236,
-    "rows_after_dedup": 1194,
+    "rows_initial": 9740,
+    "rows_after_dropna": 9740,
+    "rows_after_finite_check": 9740,
+    "rows_after_label_filter": 9740,
+    "rows_after_dedup": 9040,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 42,
+    "dropped_duplicates": 700,
     "feature_count": 43
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 273,
-      "MOVE_TO_CHAIR": 306,
-      "CHECK_TABLE": 282,
-      "EXPLORE": 333
+      "AVOID_PERSON": 2328,
+      "MOVE_TO_CHAIR": 2372,
+      "CHECK_TABLE": 2285,
+      "EXPLORE": 2055
     }
   },
   "source_quality": {
-    "real_rows": 1194,
-    "synthetic_rows": 0,
-    "total_clean": 1194,
-    "real_share": 1.0,
-    "synthetic_share": 0.0,
-    "min_real_share": 0.6,
-    "max_synthetic_share": 0.4
+    "real_rows": 1698,
+    "synthetic_rows": 7342,
+    "total_clean": 9040,
+    "real_share": 0.18783185840707964,
+    "synthetic_share": 0.8121681415929204,
+    "min_real_share": 0.0,
+    "max_synthetic_share": 1.0
   },
   "holdout_latest_real_source": {
-    "enabled": true,
-    "rows": 48,
-    "path": "data/processed/fresh_real_eval.csv",
-    "require_two_real_batches_for_holdout": true,
+    "enabled": false,
+    "rows": 0,
+    "path": "",
+    "require_two_real_batches_for_holdout": false,
     "holdout_per_class": 12,
     "holdout_min_total": 48,
     "holdout_min_sources": 4,
-    "qa": {
-      "rows": 48,
-      "per_class": {
-        "AVOID_PERSON": 12,
-        "MOVE_TO_CHAIR": 12,
-        "CHECK_TABLE": 12,
-        "EXPLORE": 12
-      },
-      "per_source": {
-        "batch_A_real": 8,
-        "batch_B_real": 6,
-        "batch_K_real": 5,
-        "batch_D_real": 5,
-        "batch_J_real": 4,
-        "batch_I_real": 3
-      },
-      "dropped_from_train_due_to_holdout": 48,
-      "min_required_total": 48,
-      "min_required_sources": 4
-    }
+    "qa": {}
   },
   "feature_columns": [
     "f0",
@@ -132,9 +122,9 @@
     "f42"
   ],
   "rows": {
-    "train": 896,
-    "val": 192,
-    "test": 196,
-    "total": 1284
+    "train": 6640,
+    "val": 1420,
+    "test": 1428,
+    "total": 9488
   }
 }
