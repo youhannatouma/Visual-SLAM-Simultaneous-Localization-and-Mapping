@@ -37,6 +37,13 @@ PROMOTION_STRICT=1
 HOLDOUT_PER_CLASS=12
 HOLDOUT_MIN_TOTAL=48
 HOLDOUT_MIN_SOURCES=4
+HOLDOUT_MIN_REVIEWED_PER_CLASS=0
+HOLDOUT_MIN_CLASS_SOURCES=0
+HOLDOUT_REQUIRE_SCENARIO_TAGS=0
+TRAINING_PROFILE="comparable"
+REAL_REVIEWED_WEIGHT=1.0
+HARD_NEGATIVE_WEIGHT=1.0
+CLASS_TARGET_WEIGHTS=""
 
 usage() {
   cat <<USAGE
@@ -79,6 +86,13 @@ Options:
   --holdout-per-class <n>        Holdout rows per class (default: 12).
   --holdout-min-total <n>        Minimum total holdout rows (default: 48).
   --holdout-min-sources <n>      Minimum distinct holdout sources (default: 4).
+  --holdout-min-reviewed-per-class <n> Minimum reviewed holdout rows per class.
+  --holdout-min-class-sources <n> Minimum distinct holdout sources per class.
+  --holdout-require-scenario-tags Require scenario tags on fresh-real holdout rows.
+  --training-profile <profile>   Training sampling profile: comparable|real_recovery.
+  --real-reviewed-weight <x>     Sampling multiplier for reviewed real rows.
+  --hard-negative-weight <x>     Sampling multiplier for auto-label disagreement rows.
+  --class-target-weights <spec>  LABEL:WEIGHT pairs for reviewed real class emphasis.
   -h, --help                     Show this help.
 USAGE
 }
@@ -229,6 +243,34 @@ while [[ $# -gt 0 ]]; do
       HOLDOUT_MIN_SOURCES="$2"
       shift 2
       ;;
+    --holdout-min-reviewed-per-class)
+      HOLDOUT_MIN_REVIEWED_PER_CLASS="$2"
+      shift 2
+      ;;
+    --holdout-min-class-sources)
+      HOLDOUT_MIN_CLASS_SOURCES="$2"
+      shift 2
+      ;;
+    --holdout-require-scenario-tags)
+      HOLDOUT_REQUIRE_SCENARIO_TAGS=1
+      shift
+      ;;
+    --training-profile)
+      TRAINING_PROFILE="$2"
+      shift 2
+      ;;
+    --real-reviewed-weight)
+      REAL_REVIEWED_WEIGHT="$2"
+      shift 2
+      ;;
+    --hard-negative-weight)
+      HARD_NEGATIVE_WEIGHT="$2"
+      shift 2
+      ;;
+    --class-target-weights)
+      CLASS_TARGET_WEIGHTS="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -298,6 +340,10 @@ if [[ "$READY_FOR_TRAINING" != "true" ]]; then
 fi
 
 echo "[3/4] Running preprocessing..."
+PREP_EXTRA_ARGS=()
+if [[ "$HOLDOUT_REQUIRE_SCENARIO_TAGS" -eq 1 ]]; then
+  PREP_EXTRA_ARGS+=(--holdout-require-scenario-tags)
+fi
 "$PYTHON_BIN" scripts/prepare_reasoning_data.py \
   --input-glob "$INPUT_GLOB" \
   --out-dir "$OUT_DIR" \
@@ -311,7 +357,10 @@ echo "[3/4] Running preprocessing..."
   --holdout-per-class "$HOLDOUT_PER_CLASS" \
   --holdout-min-total "$HOLDOUT_MIN_TOTAL" \
   --holdout-min-sources "$HOLDOUT_MIN_SOURCES" \
-  --seed "$SEED"
+  --holdout-min-reviewed-per-class "$HOLDOUT_MIN_REVIEWED_PER_CLASS" \
+  --holdout-min-class-sources "$HOLDOUT_MIN_CLASS_SOURCES" \
+  --seed "$SEED" \
+  "${PREP_EXTRA_ARGS[@]}"
 
 echo "[3.5/4] Writing dataset manifest snapshot..."
 "$PYTHON_BIN" scripts/create_dataset_manifest.py \
@@ -337,7 +386,11 @@ fi
   --lr "$TRAIN_LR" \
   --weight-decay "$TRAIN_WEIGHT_DECAY" \
   --label-smoothing "$TRAIN_LABEL_SMOOTHING" \
-  --seed "$SEED"
+  --seed "$SEED" \
+  --training-profile "$TRAINING_PROFILE" \
+  --real-reviewed-weight "$REAL_REVIEWED_WEIGHT" \
+  --hard-negative-weight "$HARD_NEGATIVE_WEIGHT" \
+  --class-target-weights "$CLASS_TARGET_WEIGHTS"
 
 PROMOTION_ARGS=(
   --current-metrics-path "$REPORT_DIR/metrics.json"

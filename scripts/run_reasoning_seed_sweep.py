@@ -98,6 +98,46 @@ def parse_args():
         default=30,
         help="Training epochs forwarded to guarded pipeline.",
     )
+    parser.add_argument(
+        "--holdout-min-reviewed-per-class",
+        type=int,
+        default=0,
+        help="Minimum reviewed holdout rows per class passed through to preprocessing.",
+    )
+    parser.add_argument(
+        "--holdout-min-class-sources",
+        type=int,
+        default=0,
+        help="Minimum holdout source diversity per class passed through to preprocessing.",
+    )
+    parser.add_argument(
+        "--holdout-require-scenario-tags",
+        action="store_true",
+        help="Require scenario tags on holdout rows.",
+    )
+    parser.add_argument(
+        "--training-profile",
+        default="comparable",
+        choices=["comparable", "real_recovery"],
+        help="Training profile passed through to train_reasoning.py.",
+    )
+    parser.add_argument(
+        "--real-reviewed-weight",
+        type=float,
+        default=1.0,
+        help="Sampling multiplier for reviewed real rows.",
+    )
+    parser.add_argument(
+        "--hard-negative-weight",
+        type=float,
+        default=1.0,
+        help="Sampling multiplier for hard negatives.",
+    )
+    parser.add_argument(
+        "--class-target-weights",
+        default="",
+        help="LABEL:WEIGHT pairs for reviewed real row emphasis.",
+    )
     return parser.parse_args()
 
 
@@ -127,6 +167,13 @@ def run_pipeline(
     holdout_min_total,
     holdout_min_sources,
     epochs,
+    holdout_min_reviewed_per_class,
+    holdout_min_class_sources,
+    holdout_require_scenario_tags,
+    training_profile,
+    real_reviewed_weight,
+    hard_negative_weight,
+    class_target_weights,
 ):
     report_path = os.path.join(report_dir, "dataset_audit.json")
     manifest_path = os.path.join(report_dir, "manifest", "dataset_manifest.json")
@@ -161,18 +208,32 @@ def run_pipeline(
         str(holdout_min_total),
         "--holdout-min-sources",
         str(holdout_min_sources),
+        "--holdout-min-reviewed-per-class",
+        str(holdout_min_reviewed_per_class),
+        "--holdout-min-class-sources",
+        str(holdout_min_class_sources),
         "--epochs",
         str(epochs),
+        "--training-profile",
+        str(training_profile),
+        "--real-reviewed-weight",
+        str(real_reviewed_weight),
+        "--hard-negative-weight",
+        str(hard_negative_weight),
         "--no-promotion-write",
         "--allow-non-promotable",
     ]
+    if class_target_weights:
+        cmd.extend(["--class-target-weights", class_target_weights])
+    if holdout_require_scenario_tags:
+        cmd.append("--holdout-require-scenario-tags")
     subprocess.run(cmd, check=True)
 
 
 def load_metrics(path):
     metrics_path = Path(path)
     if not metrics_path.exists():
-        return {}, None, {}, None, None, None
+        return {}, None, {}, None, None, None, None
     data = json.loads(metrics_path.read_text(encoding="utf-8"))
     test_acc = data.get("accuracy", {}).get("test")
     per_class = data.get("per_class", {})
@@ -180,7 +241,15 @@ def load_metrics(path):
     fresh_real = data.get("fresh_real_eval", {})
     fresh_real_acc = fresh_real.get("accuracy")
     fresh_real_macro_f1 = fresh_real.get("macro_f1")
-    return data, test_acc, per_class, macro_f1, fresh_real_acc, fresh_real_macro_f1
+    fresh_real_per_class = fresh_real.get("per_class", {})
+    worst_fresh_real_f1 = min(
+        (
+            float(row.get("f1", 0.0) or 0.0)
+            for row in fresh_real_per_class.values()
+        ),
+        default=0.0,
+    )
+    return data, test_acc, per_class, macro_f1, fresh_real_acc, fresh_real_macro_f1, worst_fresh_real_f1
 
 
 def load_promotion_summary(path):
@@ -194,8 +263,8 @@ def load_promotion_summary(path):
 
 
 def is_non_regressing(baseline, candidate):
-    _, base_acc, base_classes, _, _, _ = baseline
-    _, cand_acc, cand_classes, _, _, _ = candidate
+    _, base_acc, base_classes, _, _, _, _ = baseline
+    _, cand_acc, cand_classes, _, _, _, _ = candidate
 
     if base_acc is None or cand_acc is None:
         return False
@@ -215,7 +284,7 @@ def select_and_rank_runs(baseline, candidates, promotion_summaries):
     ranked = []
     for seed, metrics_path in candidates.items():
         metrics = load_metrics(metrics_path)
-        _, test_acc, per_class, macro_f1, fresh_real_acc, fresh_real_macro_f1 = metrics
+        _, test_acc, per_class, macro_f1, fresh_real_acc, fresh_real_macro_f1, worst_fresh_real_f1 = metrics
         move_f1 = per_class.get("MOVE_TO_CHAIR", {}).get("f1", 0.0)
         promotion = promotion_summaries.get(seed, {})
         promotable = bool(promotion.get("promotable", False))
@@ -232,6 +301,7 @@ def select_and_rank_runs(baseline, candidates, promotion_summaries):
                 "macro_f1": float(macro_f1 or 0.0),
                 "fresh_real_accuracy": float(fresh_real_acc or 0.0),
                 "fresh_real_macro_f1": float(fresh_real_macro_f1 or 0.0),
+                "worst_fresh_real_f1": float(worst_fresh_real_f1 or 0.0),
                 "metrics": metrics_path,
                 "failure_reasons": failure_reasons,
                 "recommended_actions": recommended_actions,
@@ -243,12 +313,13 @@ def select_and_rank_runs(baseline, candidates, promotion_summaries):
 
     ranked.sort(
         key=lambda r: (
-            1 if r["promotable"] else 0,
+            r["fresh_real_macro_f1"],
+            r["worst_fresh_real_f1"],
             1 if r["non_regressing"] else 0,
             r["test_accuracy"],
-            r["fresh_real_macro_f1"],
-            r["move_to_chair_f1"],
             r["macro_f1"],
+            1 if r["promotable"] else 0,
+            r["move_to_chair_f1"],
         ),
         reverse=True,
     )
@@ -316,6 +387,13 @@ def main():
                 args.holdout_min_total,
                 args.holdout_min_sources,
                 args.epochs,
+                args.holdout_min_reviewed_per_class,
+                args.holdout_min_class_sources,
+                args.holdout_require_scenario_tags,
+                args.training_profile,
+                args.real_reviewed_weight,
+                args.hard_negative_weight,
+                args.class_target_weights,
             )
         except subprocess.CalledProcessError as exc:
             print(f"Seed {seed} failed: {exc}")
@@ -348,6 +426,7 @@ def main():
             "macro_f1": float(macro_f1),
             "fresh_real_accuracy": float(best.get("fresh_real_accuracy", 0.0)),
             "fresh_real_macro_f1": float(best.get("fresh_real_macro_f1", 0.0)),
+            "worst_fresh_real_f1": float(best.get("worst_fresh_real_f1", 0.0)),
             "metrics": metrics_path,
             "promotable": bool(best.get("promotable", False)),
             "failure_reasons": best.get("failure_reasons", []),

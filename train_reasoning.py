@@ -9,15 +9,58 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from reasoning import ACTION_CLASSES, FEATURE_SIZE, ReasoningMLP as ReasoningModel, SEQUENCE_LENGTH
 
 
 HUGE_DATASET_THRESHOLD = 50000
+REAL_SOURCE_TYPES = {"real_media", "manual_live"}
 
 
-def load_clean_frame(csv_path):
+def normalize_optional_string(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and np.isnan(value):
+        return ""
+    return str(value).strip()
+
+
+def parse_class_weight_targets(text):
+    targets = {}
+    if not text:
+        return targets
+    for chunk in str(text).split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" not in chunk:
+            raise ValueError(
+                "Invalid --class-target-weights entry. "
+                "Expected comma-separated LABEL:WEIGHT pairs."
+            )
+        label, raw_weight = chunk.split(":", 1)
+        label = label.strip().upper()
+        if label not in ACTION_CLASSES:
+            raise ValueError(
+                f"Invalid class in --class-target-weights: {label}. "
+                f"Expected one of {ACTION_CLASSES}"
+            )
+        try:
+            weight = float(raw_weight)
+        except Exception as exc:
+            raise ValueError(
+                f"Invalid weight for --class-target-weights entry '{chunk}'"
+            ) from exc
+        if weight <= 0.0:
+            raise ValueError(
+                f"Class target weights must be > 0. Got {weight} for {label}"
+            )
+        targets[label] = weight
+    return targets
+
+
+def load_clean_frame(csv_path, return_clean_df=False):
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Training file not found: {csv_path}")
 
@@ -51,16 +94,21 @@ def load_clean_frame(csv_path):
             f"found {len(feature_cols)}"
         )
 
-    return (
+    result = (
         features_df.to_numpy(dtype=np.float32),
         labels_raw.map(ACTION_CLASSES.index).to_numpy(dtype=np.int64),
         feature_cols,
     )
+    if return_clean_df:
+        return result + (df.loc[valid_mask].copy(),)
+    return result
 
 
 class SequenceDataset(Dataset):
     def __init__(self, csv_path, sequence_length=SEQUENCE_LENGTH):
-        self.features, self.labels, self.feature_cols = load_clean_frame(csv_path)
+        self.features, self.labels, self.feature_cols, self.cleaned_df = load_clean_frame(
+            csv_path, return_clean_df=True
+        )
         self.sequence_length = sequence_length
         self.feature_size = self.features.shape[1]
 
@@ -81,6 +129,45 @@ class SequenceDataset(Dataset):
             torch.tensor(x, dtype=torch.float32),
             torch.tensor(y, dtype=torch.long)
         )
+
+    def sample_weights(
+        self,
+        training_profile,
+        real_reviewed_weight,
+        hard_negative_weight,
+        class_target_weights,
+    ):
+        weights = np.ones(len(self), dtype=np.float32)
+        if len(weights) == 0:
+            return weights
+        if (
+            training_profile == "comparable"
+            and abs(real_reviewed_weight - 1.0) < 1e-12
+            and abs(hard_negative_weight - 1.0) < 1e-12
+            and not class_target_weights
+        ):
+            return weights
+
+        for idx in range(len(weights)):
+            meta = self.cleaned_df.iloc[idx + self.sequence_length - 1]
+            label = ACTION_CLASSES[int(self.labels[idx + self.sequence_length - 1])]
+            source_type = normalize_optional_string(meta.get("source_type")).lower()
+            needs_review = normalize_optional_string(meta.get("needs_review")).lower()
+            auto_label = normalize_optional_string(meta.get("auto_label")).upper()
+
+            is_real = source_type in REAL_SOURCE_TYPES
+            is_reviewed = needs_review not in {"1", "true", "yes", "pending"}
+            is_hard_negative = bool(auto_label) and auto_label in ACTION_CLASSES and auto_label != label
+
+            if is_real and is_reviewed:
+                weights[idx] *= float(real_reviewed_weight)
+                if label in class_target_weights:
+                    weights[idx] *= float(class_target_weights[label])
+
+            if is_hard_negative:
+                weights[idx] *= float(hard_negative_weight)
+
+        return weights
         
 def evaluate_model(model, dataset, batch_size, device):
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
@@ -217,6 +304,10 @@ def train(
     fresh_real_eval_path,
     algorithm,
     seed,
+    training_profile,
+    real_reviewed_weight,
+    hard_negative_weight,
+    class_target_weights,
 ):
     if algorithm.lower() != "mlp":
         raise ValueError("Only MLP is supported for reasoning training in this project")
@@ -240,12 +331,32 @@ def train(
 
     generator = torch.Generator()
     generator.manual_seed(seed)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        generator=generator,
+    train_sample_weights = train_dataset.sample_weights(
+        training_profile=training_profile,
+        real_reviewed_weight=real_reviewed_weight,
+        hard_negative_weight=hard_negative_weight,
+        class_target_weights=class_target_weights,
     )
+    use_weighted_sampler = not np.allclose(train_sample_weights, 1.0)
+    if use_weighted_sampler:
+        sampler = WeightedRandomSampler(
+            weights=torch.tensor(train_sample_weights, dtype=torch.double),
+            num_samples=len(train_sample_weights),
+            replacement=True,
+            generator=generator,
+        )
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            sampler=sampler,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            generator=generator,
+        )
 
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     os.makedirs(report_dir, exist_ok=True)
@@ -336,6 +447,11 @@ def train(
             "lr": float(lr),
             "weight_decay": float(weight_decay),
             "label_smoothing": float(label_smoothing),
+            "profile": training_profile,
+            "real_reviewed_weight": float(real_reviewed_weight),
+            "hard_negative_weight": float(hard_negative_weight),
+            "class_target_weights": {k: float(v) for k, v in class_target_weights.items()},
+            "weighted_sampler_enabled": bool(use_weighted_sampler),
         },
         "threshold_local_rows": HUGE_DATASET_THRESHOLD,
         "dataset_rows": {
@@ -392,6 +508,29 @@ def parse_args():
     parser.add_argument("--fresh-real-eval", default="", help="Optional held-out fresh real eval CSV")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
     parser.add_argument("--algorithm", default="mlp", choices=["mlp"], help="Training algorithm (locked to MLP)")
+    parser.add_argument(
+        "--training-profile",
+        default="comparable",
+        choices=["comparable", "real_recovery"],
+        help="Sampling profile for training (default: comparable)",
+    )
+    parser.add_argument(
+        "--real-reviewed-weight",
+        type=float,
+        default=1.0,
+        help="Multiplier for reviewed real rows during training sampling.",
+    )
+    parser.add_argument(
+        "--hard-negative-weight",
+        type=float,
+        default=1.0,
+        help="Multiplier for auto-label disagreement hard negatives during training sampling.",
+    )
+    parser.add_argument(
+        "--class-target-weights",
+        default="",
+        help="Optional comma-separated LABEL:WEIGHT pairs applied to reviewed real rows.",
+    )
     return parser.parse_args()
 
 
@@ -411,4 +550,8 @@ if __name__ == "__main__":
         fresh_real_eval_path=args.fresh_real_eval,
         algorithm=args.algorithm,
         seed=args.seed,
+        training_profile=args.training_profile,
+        real_reviewed_weight=args.real_reviewed_weight,
+        hard_negative_weight=args.hard_negative_weight,
+        class_target_weights=parse_class_weight_targets(args.class_target_weights),
     )

@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -77,7 +78,36 @@ def parse_args():
         action="store_true",
         help="Require needs_review=1 when building the hard-negative pool.",
     )
+    parser.add_argument(
+        "--metrics-path",
+        default="reports/metrics.json",
+        help="Metrics JSON used to infer the worst fresh-real class when no hard-negative target is set.",
+    )
     return parser.parse_args()
+
+
+def infer_worst_fresh_real_class(metrics_path: Path) -> str:
+    if not metrics_path.exists():
+        return ""
+    try:
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    per_class = payload.get("fresh_real_eval", {}).get("per_class", {})
+    if not isinstance(per_class, dict):
+        return ""
+    ranked = []
+    for label in CLASSES:
+        row = per_class.get(label, {})
+        try:
+            score = float(row.get("f1"))
+        except Exception:
+            continue
+        ranked.append((score, label))
+    if not ranked:
+        return ""
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return ranked[0][1]
 
 
 def load_and_upgrade(path: Path) -> pd.DataFrame:
@@ -162,6 +192,11 @@ def main():
 
     hard_negative_pool = None
     hard_negative_target = args.train_hard_negative_target.strip().upper()
+    if not hard_negative_target:
+        inferred_target = infer_worst_fresh_real_class(root / args.metrics_path)
+        if inferred_target:
+            hard_negative_target = inferred_target
+            print(f"Inferred hard-negative target from fresh-real metrics: {hard_negative_target}")
     if hard_negative_target:
         if hard_negative_target not in CLASSES:
             raise ValueError(

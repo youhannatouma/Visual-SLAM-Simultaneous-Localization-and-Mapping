@@ -5,13 +5,19 @@ import time
 from pathlib import Path
 
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
+RECOVERY_POLICY = {
+    "fresh_real_accuracy_min": 0.68,
+    "fresh_real_macro_f1_min": 0.65,
+    "check_table_f1_min": 0.50,
+    "other_class_f1_min": 0.55,
+}
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
             "Track 1 orchestrator: short seed sweeps + targeted refresh guidance for "
-            "fresh-real regressions with periodic noise-check runs."
+            "fresh-real regressions with alternating comparable and real-recovery runs."
         )
     )
     parser.add_argument("--python-bin", default=".venv311/bin/python", help="Python executable to run helper scripts")
@@ -20,17 +26,27 @@ def parse_args():
     parser.add_argument("--seeds", default="17,42,123", help="Comma-separated seeds")
     parser.add_argument("--epochs-min", type=int, default=12, help="Minimum epochs for short sweeps")
     parser.add_argument("--epochs-max", type=int, default=20, help="Maximum epochs for short sweeps")
+    parser.add_argument(
+        "--real-recovery-every-cycles",
+        type=int,
+        default=2,
+        help="Run the more aggressive real_recovery profile every N cycles.",
+    )
 
-    parser.add_argument("--comparable-holdout-per-class", type=int, default=8)
-    parser.add_argument("--comparable-holdout-min-total", type=int, default=32)
-    parser.add_argument("--comparable-holdout-min-sources", type=int, default=2)
+    parser.add_argument("--comparable-holdout-per-class", type=int, default=24)
+    parser.add_argument("--comparable-holdout-min-total", type=int, default=96)
+    parser.add_argument("--comparable-holdout-min-sources", type=int, default=3)
+    parser.add_argument("--comparable-holdout-min-reviewed-per-class", type=int, default=24)
+    parser.add_argument("--comparable-holdout-min-class-sources", type=int, default=3)
 
-    parser.add_argument("--noise-holdout-per-class", type=int, default=12)
-    parser.add_argument("--noise-holdout-min-total", type=int, default=48)
-    parser.add_argument("--noise-holdout-min-sources", type=int, default=2)
+    parser.add_argument("--recovery-holdout-per-class", type=int, default=24)
+    parser.add_argument("--recovery-holdout-min-total", type=int, default=96)
+    parser.add_argument("--recovery-holdout-min-sources", type=int, default=3)
+    parser.add_argument("--recovery-holdout-min-reviewed-per-class", type=int, default=24)
+    parser.add_argument("--recovery-holdout-min-class-sources", type=int, default=3)
 
-    parser.add_argument("--noise-check-every-cycles", type=int, default=3, help="Run noise-check profile every N cycles")
     parser.add_argument("--max-refresh-cycles", type=int, default=12, help="Safety cap for cycle count")
+    parser.add_argument("--require-scenario-tags", action="store_true")
 
     parser.add_argument("--track1-report-root", default="reports/track1", help="Root directory for Track 1 reports")
     parser.add_argument("--processed-root", default="data/processed_track1", help="Root directory for per-cycle processed data")
@@ -61,19 +77,31 @@ def cycle_epochs(cycle_idx, epochs_min, epochs_max):
 
 def cycle_profile(cycle_idx, every_n):
     if every_n <= 0:
-        raise ValueError("--noise-check-every-cycles must be >= 1")
-    return "noise_check" if cycle_idx % every_n == 0 else "comparable"
+        raise ValueError("--real-recovery-every-cycles must be >= 1")
+    return "real_recovery" if cycle_idx % every_n == 0 else "comparable"
 
 
 def build_sweep_cmd(args, profile_name, epochs, cycle_report_dir, cycle_processed_dir, cycle_model_dir):
-    if profile_name == "noise_check":
-        holdout_per_class = args.noise_holdout_per_class
-        holdout_min_total = args.noise_holdout_min_total
-        holdout_min_sources = args.noise_holdout_min_sources
+    if profile_name == "real_recovery":
+        holdout_per_class = args.recovery_holdout_per_class
+        holdout_min_total = args.recovery_holdout_min_total
+        holdout_min_sources = args.recovery_holdout_min_sources
+        holdout_min_reviewed_per_class = args.recovery_holdout_min_reviewed_per_class
+        holdout_min_class_sources = args.recovery_holdout_min_class_sources
+        training_profile = "real_recovery"
+        real_reviewed_weight = 2.5
+        hard_negative_weight = 1.75
+        class_target_weights = "CHECK_TABLE:2.4,MOVE_TO_CHAIR:1.8,EXPLORE:1.2"
     else:
         holdout_per_class = args.comparable_holdout_per_class
         holdout_min_total = args.comparable_holdout_min_total
         holdout_min_sources = args.comparable_holdout_min_sources
+        holdout_min_reviewed_per_class = args.comparable_holdout_min_reviewed_per_class
+        holdout_min_class_sources = args.comparable_holdout_min_class_sources
+        training_profile = "comparable"
+        real_reviewed_weight = 1.0
+        hard_negative_weight = 1.0
+        class_target_weights = ""
 
     cmd = [
         args.python_bin,
@@ -90,6 +118,10 @@ def build_sweep_cmd(args, profile_name, epochs, cycle_report_dir, cycle_processe
         str(holdout_min_total),
         "--holdout-min-sources",
         str(holdout_min_sources),
+        "--holdout-min-reviewed-per-class",
+        str(holdout_min_reviewed_per_class),
+        "--holdout-min-class-sources",
+        str(holdout_min_class_sources),
         "--baseline",
         args.baseline,
         "--out-root",
@@ -98,7 +130,17 @@ def build_sweep_cmd(args, profile_name, epochs, cycle_report_dir, cycle_processe
         str(cycle_processed_dir),
         "--model-root",
         str(cycle_model_dir),
+        "--training-profile",
+        training_profile,
+        "--real-reviewed-weight",
+        str(real_reviewed_weight),
+        "--hard-negative-weight",
+        str(hard_negative_weight),
     ]
+    if class_target_weights:
+        cmd.extend(["--class-target-weights", class_target_weights])
+    if args.require_scenario_tags:
+        cmd.append("--holdout-require-scenario-tags")
     if args.keep_going:
         cmd.append("--keep-going")
     return cmd
@@ -168,13 +210,115 @@ def build_refresh_recommendations(regressing):
     return recs
 
 
-def evaluate_cycle(best_seed, sweep_summary, cycle_dir):
+def top_confusion_pairs(confusion_matrix):
+    pairs = []
+    if not isinstance(confusion_matrix, list):
+        return pairs
+    for true_idx, row in enumerate(confusion_matrix):
+        if not isinstance(row, list):
+            continue
+        for pred_idx, count in enumerate(row):
+            if true_idx == pred_idx:
+                continue
+            if count:
+                pairs.append(
+                    {
+                        "true_label": ACTION_CLASSES[true_idx],
+                        "pred_label": ACTION_CLASSES[pred_idx],
+                        "count": int(count),
+                    }
+                )
+    pairs.sort(key=lambda item: (-item["count"], item["true_label"], item["pred_label"]))
+    return pairs
+
+
+def evaluate_recovery_policy(metrics):
+    fresh_real = metrics.get("fresh_real_eval", {}) if isinstance(metrics, dict) else {}
+    per_class = fresh_real.get("per_class", {}) if isinstance(fresh_real, dict) else {}
+    accuracy = fresh_real.get("accuracy")
+    macro_f1 = fresh_real.get("macro_f1")
+
+    class_rows = {}
+    failed_labels = []
+    for label in ACTION_CLASSES:
+        f1 = None
+        if isinstance(per_class.get(label), dict):
+            f1 = per_class[label].get("f1")
+        threshold = RECOVERY_POLICY["check_table_f1_min"] if label == "CHECK_TABLE" else RECOVERY_POLICY["other_class_f1_min"]
+        passed = f1 is not None and float(f1) >= float(threshold)
+        class_rows[label] = {
+            "f1": f1,
+            "threshold": float(threshold),
+            "passed": bool(passed),
+        }
+        if not passed:
+            failed_labels.append(label)
+
+    accuracy_passed = accuracy is not None and float(accuracy) >= float(RECOVERY_POLICY["fresh_real_accuracy_min"])
+    macro_f1_passed = macro_f1 is not None and float(macro_f1) >= float(RECOVERY_POLICY["fresh_real_macro_f1_min"])
+    worst_label = min(
+        ACTION_CLASSES,
+        key=lambda label: float(class_rows[label]["f1"]) if class_rows[label]["f1"] is not None else float("-inf"),
+    )
+    return {
+        "passed": bool(accuracy_passed and macro_f1_passed and not failed_labels),
+        "fresh_real_accuracy": {
+            "value": accuracy,
+            "threshold": float(RECOVERY_POLICY["fresh_real_accuracy_min"]),
+            "passed": bool(accuracy_passed),
+        },
+        "fresh_real_macro_f1": {
+            "value": macro_f1,
+            "threshold": float(RECOVERY_POLICY["fresh_real_macro_f1_min"]),
+            "passed": bool(macro_f1_passed),
+        },
+        "per_class": class_rows,
+        "worst_class": worst_label,
+        "failed_labels": failed_labels,
+    }
+
+
+def build_recovery_summary(metrics, processed_metadata, evaluation):
+    fresh_real = metrics.get("fresh_real_eval", {}) if isinstance(metrics, dict) else {}
+    confusion_pairs = top_confusion_pairs(fresh_real.get("confusion_matrix", []))
+    holdout_qa = (
+        processed_metadata.get("holdout_latest_real_source", {}).get("qa", {})
+        if isinstance(processed_metadata, dict)
+        else {}
+    )
+    summary = {
+        "fresh_real_accuracy": fresh_real.get("accuracy"),
+        "fresh_real_macro_f1": fresh_real.get("macro_f1"),
+        "rows": fresh_real.get("rows"),
+        "confusion_matrix": fresh_real.get("confusion_matrix"),
+        "top_confusion_pairs": confusion_pairs[:6],
+        "worst_class": evaluation.get("recovery_policy", {}).get("worst_class"),
+        "holdout_quality": {
+            "promotion_grade_ready": holdout_qa.get("promotion_grade_ready"),
+            "rows": holdout_qa.get("rows"),
+            "usable_sequence_rows": holdout_qa.get("usable_sequence_rows"),
+            "per_class": holdout_qa.get("per_class"),
+            "per_class_reviewed_rows": holdout_qa.get("per_class_reviewed_rows"),
+            "per_class_source_counts": holdout_qa.get("per_class_source_counts"),
+            "per_class_scenarios": holdout_qa.get("per_class_scenarios"),
+            "reviewed_row_percent": holdout_qa.get("reviewed_row_percent"),
+        },
+        "recovery_policy": evaluation.get("recovery_policy", {}),
+        "targeted_refresh_recommendations": evaluation.get("targeted_refresh_recommendations", []),
+    }
+    if confusion_pairs:
+        summary["top_confusion_pair"] = confusion_pairs[0]
+    return summary
+
+
+def evaluate_cycle(best_seed, sweep_summary, cycle_dir, processed_cycle_dir):
     ranked = sweep_summary.get("ranked_runs", [])
     best = sweep_summary.get("best") or {}
     if best_seed is None:
         return {
             "status": "no_completed_runs",
             "promotion": {"all_gates_pass": False},
+            "recovery_policy": {"passed": False, "worst_class": "CHECK_TABLE", "failed_labels": ACTION_CLASSES},
             "fresh_real_per_class": {label: {"delta_f1": None, "passed": False} for label in ACTION_CLASSES},
             "regressing_classes": ACTION_CLASSES,
             "targeted_refresh_recommendations": ["Sweep produced no valid seed run; fix pipeline errors first."],
@@ -183,10 +327,12 @@ def evaluate_cycle(best_seed, sweep_summary, cycle_dir):
         }
 
     promotion_path = Path(cycle_dir) / f"seed_{best_seed}" / "promotion_summary.json"
+    metrics_path = Path(cycle_dir) / f"seed_{best_seed}" / "metrics.json"
     if not promotion_path.exists():
         return {
             "status": "missing_promotion_summary",
             "promotion": {"all_gates_pass": False},
+            "recovery_policy": {"passed": False, "worst_class": "CHECK_TABLE", "failed_labels": ACTION_CLASSES},
             "fresh_real_per_class": {label: {"delta_f1": None, "passed": False} for label in ACTION_CLASSES},
             "regressing_classes": ACTION_CLASSES,
             "targeted_refresh_recommendations": [
@@ -197,6 +343,11 @@ def evaluate_cycle(best_seed, sweep_summary, cycle_dir):
         }
 
     promotion = read_json(promotion_path)
+    metrics = read_json(metrics_path) if metrics_path.exists() else {}
+    processed_metadata = {}
+    metadata_path = Path(processed_cycle_dir) / f"seed_{best_seed}" / "metadata.json"
+    if metadata_path.exists():
+        processed_metadata = read_json(metadata_path)
     gates = promotion.get("gate_results", {})
     test_ok, _ = get_gate(gates, "test_accuracy_non_regression")
     key_ok, _ = get_gate(gates, "key_class_f1_non_regression")
@@ -205,9 +356,29 @@ def evaluate_cycle(best_seed, sweep_summary, cycle_dir):
 
     delta_map = build_class_delta_map(gates)
     regressing = regressing_classes_from_deltas(delta_map)
-    all_gates_pass = bool(test_ok and key_ok and fresh_agg_ok and fresh_class_ok and not regressing)
+    recovery_policy = evaluate_recovery_policy(metrics)
+    confusion_pairs = top_confusion_pairs(metrics.get("fresh_real_eval", {}).get("confusion_matrix", []))
+    top_pair = confusion_pairs[0] if confusion_pairs else None
+    recommendations = build_refresh_recommendations(regressing or recovery_policy.get("failed_labels", []))
+    if top_pair:
+        recommendations.insert(
+            0,
+            "Top confusion to collect next: "
+            f"{top_pair['true_label']} -> {top_pair['pred_label']} "
+            f"(count={top_pair['count']}).",
+        )
+    holdout_quality = processed_metadata.get("holdout_latest_real_source", {}).get("qa", {}) if isinstance(processed_metadata, dict) else {}
+    all_gates_pass = bool(
+        test_ok
+        and key_ok
+        and fresh_agg_ok
+        and fresh_class_ok
+        and not regressing
+        and recovery_policy.get("passed", False)
+        and bool(holdout_quality.get("promotion_grade_ready", False))
+    )
 
-    return {
+    result = {
         "status": "evaluated",
         "promotion": {
             "promotable_flag": bool(promotion.get("promotable", False)),
@@ -226,13 +397,21 @@ def evaluate_cycle(best_seed, sweep_summary, cycle_dir):
             "failure_reasons": promotion.get("failure_reasons", []),
             "recommended_actions": promotion.get("recommended_actions", []),
         },
+        "recovery_policy": recovery_policy,
         "fresh_real_per_class": delta_map,
         "regressing_classes": regressing,
-        "targeted_refresh_recommendations": build_refresh_recommendations(regressing),
+        "top_confusion_pair": top_pair,
+        "holdout_quality": holdout_quality,
+        "targeted_refresh_recommendations": recommendations,
         "ranked_runs": ranked,
         "best": best,
         "best_seed_promotion_summary": str(promotion_path),
     }
+    recovery_summary = build_recovery_summary(metrics, processed_metadata, result)
+    recovery_summary_path = Path(cycle_dir) / "fresh_real_recovery_summary.json"
+    recovery_summary_path.write_text(json.dumps(recovery_summary, indent=2), encoding="utf-8")
+    result["fresh_real_recovery_summary"] = str(recovery_summary_path)
+    return result
 
 
 def main():
@@ -249,11 +428,12 @@ def main():
     base_model_dir.mkdir(parents=True, exist_ok=True)
 
     cycles = []
-    final_status = "max_cycles_reached_without_promotion"
+    final_status = "max_cycles_reached_without_recovery_pass"
     promoted_cycle = None
+    consecutive_comparable_recovery_passes = 0
 
     for cycle_idx in range(1, args.max_refresh_cycles + 1):
-        profile = cycle_profile(cycle_idx, args.noise_check_every_cycles)
+        profile = cycle_profile(cycle_idx, args.real_recovery_every_cycles)
         epochs = cycle_epochs(cycle_idx, args.epochs_min, args.epochs_max)
 
         cycle_id = f"cycle_{cycle_idx:02d}_{profile}"
@@ -268,7 +448,7 @@ def main():
             "cycle_index": cycle_idx,
             "cycle_id": cycle_id,
             "profile": profile,
-            "is_noise_check": bool(profile == "noise_check"),
+            "is_real_recovery": bool(profile == "real_recovery"),
             "epochs": epochs,
             "seeds": seeds,
             "sweep_command": cmd,
@@ -280,6 +460,7 @@ def main():
             cycle_record["evaluation"] = {
                 "status": "dry_run_not_executed",
                 "promotion": {"all_gates_pass": False},
+                "recovery_policy": {"passed": False, "worst_class": "CHECK_TABLE", "failed_labels": ACTION_CLASSES},
                 "fresh_real_per_class": {label: {"delta_f1": None, "passed": False} for label in ACTION_CLASSES},
                 "regressing_classes": ACTION_CLASSES,
                 "targeted_refresh_recommendations": [
@@ -296,6 +477,7 @@ def main():
             cycle_record["evaluation"] = {
                 "status": "missing_seed_sweep_summary",
                 "promotion": {"all_gates_pass": False},
+                "recovery_policy": {"passed": False, "worst_class": "CHECK_TABLE", "failed_labels": ACTION_CLASSES},
                 "fresh_real_per_class": {label: {"delta_f1": None, "passed": False} for label in ACTION_CLASSES},
                 "regressing_classes": ACTION_CLASSES,
                 "targeted_refresh_recommendations": [
@@ -310,12 +492,22 @@ def main():
         if sweep_summary.get("best") and sweep_summary["best"].get("seed") is not None:
             best_seed = int(sweep_summary["best"]["seed"])
 
-        evaluation = evaluate_cycle(best_seed, sweep_summary, cycle_report_dir)
+        evaluation = evaluate_cycle(best_seed, sweep_summary, cycle_report_dir, cycle_processed_dir)
         cycle_record["evaluation"] = evaluation
         cycles.append(cycle_record)
 
+        recovery_passed = bool(evaluation.get("recovery_policy", {}).get("passed", False))
+        if profile == "comparable" and recovery_passed:
+            consecutive_comparable_recovery_passes += 1
+        elif profile == "comparable":
+            consecutive_comparable_recovery_passes = 0
+
         if evaluation.get("promotion", {}).get("all_gates_pass", False):
-            final_status = "promotable"
+            final_status = "promotable_under_recovery_policy"
+            promoted_cycle = cycle_idx
+            break
+        if consecutive_comparable_recovery_passes >= 2:
+            final_status = "ready_to_tighten_canonical_promotion_gates"
             promoted_cycle = cycle_idx
             break
 
@@ -343,19 +535,25 @@ def main():
             "seeds": seeds,
             "epochs_min": args.epochs_min,
             "epochs_max": args.epochs_max,
+            "real_recovery_every_cycles": args.real_recovery_every_cycles,
             "comparable_holdout": {
                 "holdout_per_class": args.comparable_holdout_per_class,
                 "holdout_min_total": args.comparable_holdout_min_total,
                 "holdout_min_sources": args.comparable_holdout_min_sources,
+                "holdout_min_reviewed_per_class": args.comparable_holdout_min_reviewed_per_class,
+                "holdout_min_class_sources": args.comparable_holdout_min_class_sources,
             },
-            "noise_holdout": {
-                "holdout_per_class": args.noise_holdout_per_class,
-                "holdout_min_total": args.noise_holdout_min_total,
-                "holdout_min_sources": args.noise_holdout_min_sources,
+            "recovery_holdout": {
+                "holdout_per_class": args.recovery_holdout_per_class,
+                "holdout_min_total": args.recovery_holdout_min_total,
+                "holdout_min_sources": args.recovery_holdout_min_sources,
+                "holdout_min_reviewed_per_class": args.recovery_holdout_min_reviewed_per_class,
+                "holdout_min_class_sources": args.recovery_holdout_min_class_sources,
             },
-            "noise_check_every_cycles": args.noise_check_every_cycles,
+            "require_scenario_tags": bool(args.require_scenario_tags),
             "max_refresh_cycles": args.max_refresh_cycles,
             "dry_run": bool(args.dry_run),
+            "recovery_policy": RECOVERY_POLICY,
         },
         "cycles": cycles,
     }

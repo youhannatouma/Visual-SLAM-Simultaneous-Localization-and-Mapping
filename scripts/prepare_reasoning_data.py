@@ -76,6 +76,34 @@ def parse_args():
         help="Minimum required independent real sources represented in holdout.",
     )
     parser.add_argument(
+        "--holdout-min-reviewed-per-class",
+        type=int,
+        default=0,
+        help="Minimum reviewed rows required per class inside the fresh-real holdout.",
+    )
+    parser.add_argument(
+        "--holdout-min-class-sources",
+        type=int,
+        default=0,
+        help="Minimum distinct sources required per class inside the fresh-real holdout.",
+    )
+    parser.add_argument(
+        "--holdout-require-scenario-tags",
+        action="store_true",
+        help="Require non-empty scenario tags for all rows in the fresh-real holdout.",
+    )
+    parser.add_argument(
+        "--holdout-sequence-length",
+        type=int,
+        default=10,
+        help="Sequence length used to estimate usable fresh-real evaluation rows.",
+    )
+    parser.add_argument(
+        "--holdout-summary-path",
+        default="",
+        help="Optional JSON path for detailed fresh-real holdout quality summary.",
+    )
+    parser.add_argument(
         "--enforce-review-applied",
         action="store_true",
         help="Fail if pending review status exists for input CSVs",
@@ -356,7 +384,30 @@ def _real_unit_columns(df):
     return batch_col, source_col
 
 
-def holdout_multisource_balanced(df, out_dir, holdout_per_class, holdout_min_total, holdout_min_sources):
+def reviewed_mask(series):
+    if series is None:
+        return np.ones(0, dtype=bool)
+    normalized = (
+        series.fillna("")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+    return ~normalized.isin({"1", "true", "yes", "pending"})
+
+
+def holdout_multisource_balanced(
+    df,
+    out_dir,
+    holdout_per_class,
+    holdout_min_total,
+    holdout_min_sources,
+    holdout_min_reviewed_per_class,
+    holdout_min_class_sources,
+    holdout_require_scenario_tags,
+    holdout_sequence_length,
+    holdout_summary_path,
+):
     real_mask = df["source_type"].isin(REAL_SOURCE_TYPES)
     real_df = df.loc[real_mask].copy()
     if real_df.empty:
@@ -440,11 +491,11 @@ def holdout_multisource_balanced(df, out_dir, holdout_per_class, holdout_min_tot
         )
 
     holdout_label_counts = holdout_df["label"].value_counts().reindex(ACTION_CLASSES, fill_value=0)
-    zero_labels = [label for label, n in holdout_label_counts.items() if int(n) == 0]
-    if zero_labels:
+    low_labels = [label for label, n in holdout_label_counts.items() if int(n) < int(holdout_per_class)]
+    if low_labels:
         raise ValueError(
-            "Holdout gate failed: missing class coverage in holdout. "
-            f"Missing: {', '.join(zero_labels)}"
+            "Holdout gate failed: insufficient per-class coverage in holdout. "
+            f"Need >= {holdout_per_class} rows each. Low classes: {', '.join(low_labels)}"
         )
 
     holdout_sources = (
@@ -479,16 +530,99 @@ def holdout_multisource_balanced(df, out_dir, holdout_per_class, holdout_min_tot
             f"Need >= {holdout_min_sources} sources in holdout."
         )
 
+    if batch_col is not None:
+        source_name_series = holdout_df[batch_col].fillna("").astype(str).str.strip()
+        source_name_series = source_name_series[source_name_series.ne("")]
+        if source_name_series.empty:
+            source_name_series = holdout_df[source_col].astype(str)
+    else:
+        source_name_series = holdout_df[source_col].astype(str)
+    reviewed = reviewed_mask(holdout_df["needs_review"]) if "needs_review" in holdout_df.columns else np.ones(len(holdout_df), dtype=bool)
+    reviewed_series = pd.Series(reviewed, index=holdout_df.index)
+    per_class_reviewed = {}
+    per_class_source_counts = {}
+    per_class_scenarios = {}
+    for label in ACTION_CLASSES:
+        label_df = holdout_df[holdout_df["label"] == label]
+        per_class_reviewed[label] = int(reviewed_series.loc[label_df.index].sum())
+        if batch_col is not None:
+            label_sources = (
+                label_df[batch_col].fillna("").astype(str).str.strip()
+            )
+            label_sources = label_sources[label_sources.ne("")]
+            if label_sources.empty:
+                label_sources = label_df[source_col].astype(str)
+        else:
+            label_sources = label_df[source_col].astype(str)
+        per_class_source_counts[label] = int(label_sources.nunique())
+
+        if "scenario" in label_df.columns:
+            scenarios = (
+                label_df["scenario"].fillna("").astype(str).str.strip()
+            )
+            per_class_scenarios[label] = sorted({value for value in scenarios.tolist() if value})
+        else:
+            per_class_scenarios[label] = []
+
+    if holdout_min_reviewed_per_class > 0:
+        low_reviewed = [
+            label for label, count in per_class_reviewed.items()
+            if int(count) < int(holdout_min_reviewed_per_class)
+        ]
+        if low_reviewed:
+            raise ValueError(
+                "Holdout gate failed: insufficient reviewed rows per class. "
+                f"Need >= {holdout_min_reviewed_per_class}. Low classes: {', '.join(low_reviewed)}"
+            )
+
+    if holdout_min_class_sources > 0:
+        low_source_classes = [
+            label for label, count in per_class_source_counts.items()
+            if int(count) < int(holdout_min_class_sources)
+        ]
+        if low_source_classes:
+            raise ValueError(
+                "Holdout gate failed: insufficient per-class source diversity. "
+                f"Need >= {holdout_min_class_sources}. Low classes: {', '.join(low_source_classes)}"
+            )
+
+    if holdout_require_scenario_tags and "scenario" in holdout_df.columns:
+        missing_scenarios = holdout_df["scenario"].fillna("").astype(str).str.strip().eq("")
+        if bool(missing_scenarios.any()):
+            raise ValueError("Holdout gate failed: scenario metadata missing for some holdout rows.")
+    elif holdout_require_scenario_tags:
+        raise ValueError("Holdout gate failed: scenario metadata column missing from holdout rows.")
+
     holdout_path = os.path.join(out_dir, "fresh_real_eval.csv")
     holdout_df.to_csv(holdout_path, index=False)
+    usable_sequence_rows = max(0, int(len(holdout_df)) - int(max(1, holdout_sequence_length)) + 1)
     qa = {
         "rows": int(len(holdout_df)),
+        "usable_sequence_rows": int(usable_sequence_rows),
         "per_class": {label: int(holdout_label_counts[label]) for label in ACTION_CLASSES},
-        "per_source": {str(k): int(v) for k, v in pd.Series(holdout_sources).value_counts().to_dict().items()},
+        "per_source": {str(k): int(v) for k, v in source_name_series.value_counts().to_dict().items()},
+        "per_class_reviewed_rows": per_class_reviewed,
+        "per_class_source_counts": per_class_source_counts,
+        "per_class_scenarios": per_class_scenarios,
+        "reviewed_row_percent": float((float(reviewed_series.sum()) / float(len(holdout_df))) * 100.0) if len(holdout_df) else 0.0,
         "dropped_from_train_due_to_holdout": int(len(used_idx)),
         "min_required_total": int(holdout_min_total),
         "min_required_sources": int(holdout_min_sources),
+        "min_required_reviewed_per_class": int(holdout_min_reviewed_per_class),
+        "min_required_class_sources": int(holdout_min_class_sources),
+        "scenario_tags_required": bool(holdout_require_scenario_tags),
+        "sequence_length": int(max(1, holdout_sequence_length)),
+        "promotion_grade_ready": bool(
+            usable_sequence_rows >= int(holdout_min_total)
+            and len(source_set) >= int(holdout_min_sources)
+            and all(int(holdout_label_counts[label]) >= int(holdout_per_class) for label in ACTION_CLASSES)
+            and all(int(per_class_reviewed[label]) >= int(holdout_min_reviewed_per_class) for label in ACTION_CLASSES)
+            and all(int(per_class_source_counts[label]) >= int(holdout_min_class_sources) for label in ACTION_CLASSES)
+        ),
     }
+    if holdout_summary_path:
+        Path(holdout_summary_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(holdout_summary_path).write_text(json.dumps(qa, indent=2), encoding="utf-8")
     return remaining_df, holdout_path, qa
 
 
@@ -533,22 +667,30 @@ def main():
     holdout_path = ""
     holdout_qa = {}
     holdout_rows = 0
+    holdout_summary_path = ""
     split_input_df = clean_df
     if args.holdout_latest_real_source:
         min_sources = args.holdout_min_sources
         if args.require_two_real_batches_for_holdout:
             min_sources = max(min_sources, 2)
+        holdout_summary_path = args.holdout_summary_path or os.path.join(args.out_dir, "fresh_real_holdout_summary.json")
         split_input_df, holdout_path, holdout_qa = holdout_multisource_balanced(
             clean_df,
             args.out_dir,
             args.holdout_per_class,
             args.holdout_min_total,
             min_sources,
+            args.holdout_min_reviewed_per_class,
+            args.holdout_min_class_sources,
+            args.holdout_require_scenario_tags,
+            args.holdout_sequence_length,
+            holdout_summary_path,
         )
         holdout_rows = int(holdout_qa.get("rows", 0))
         print(
             "Held out deterministic multi-source fresh eval "
-            f"({holdout_rows} rows; sources={len(holdout_qa.get('per_source', {}))})"
+            f"({holdout_rows} rows; usable_sequences={holdout_qa.get('usable_sequence_rows', 0)}; "
+            f"sources={len(holdout_qa.get('per_source', {}))})"
         )
         print(f"Saved fresh real eval set: {holdout_path}")
 
@@ -589,6 +731,11 @@ def main():
             "holdout_per_class": int(args.holdout_per_class),
             "holdout_min_total": int(args.holdout_min_total),
             "holdout_min_sources": int(min_sources if args.holdout_latest_real_source else args.holdout_min_sources),
+            "holdout_min_reviewed_per_class": int(args.holdout_min_reviewed_per_class),
+            "holdout_min_class_sources": int(args.holdout_min_class_sources),
+            "holdout_require_scenario_tags": bool(args.holdout_require_scenario_tags),
+            "holdout_sequence_length": int(args.holdout_sequence_length),
+            "summary_path": holdout_summary_path,
             "qa": holdout_qa,
         },
         "feature_columns": feature_cols,
