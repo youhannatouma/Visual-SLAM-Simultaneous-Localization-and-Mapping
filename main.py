@@ -18,6 +18,7 @@ from mapping_runtime import (
     compute_map_consistency_score,
     compute_mapping_quality_summary,
     compute_obstacle_object_precision_recall,
+    compute_obstacle_object_precision_recall_from_components,
     compute_obstacle_persistence_stability,
     compute_obstacle_precision_recall,
     compute_occupancy_confidence_concentration,
@@ -25,6 +26,7 @@ from mapping_runtime import (
     dataclass_to_dict,
     load_run_annotations,
     parse_action_label,
+    select_benchmark_obstacle_metric,
     action_confidence_from_tracked,
     load_camera_calibration,
     write_joint_report,
@@ -632,8 +634,8 @@ def main():
             mapper.frame_obstacles if mapper is not None else {},
             match_radius_cells=args.map_obstacle_match_radius_cells,
         )
-        obstacle_object_pr = compute_obstacle_object_precision_recall(
-            run_annotations.get("obstacles_by_frame", {}),
+        obstacle_object_pr = compute_obstacle_object_precision_recall_from_components(
+            run_annotations.get("obstacle_components_by_frame", {}),
             mapper.frame_obstacles if mapper is not None else {},
             match_radius_cells=args.map_obstacle_match_radius_cells,
         )
@@ -651,7 +653,13 @@ def main():
         obstacle_persistence = compute_obstacle_persistence_stability(mapper.frame_obstacles)
         occupancy_confidence = compute_occupancy_confidence_concentration(mapper.grid)
         lc_summary = mapper.loop_closure_summary()
-        benchmark_obstacle_pr = obstacle_object_pr if args.map_benchmark_obstacle_metric == "object" else obstacle_pr
+        event_summary = mapper.event_summary()
+        benchmark_metric_selection = select_benchmark_obstacle_metric(
+            cell_metric=obstacle_pr,
+            object_metric=obstacle_object_pr,
+            configured_metric=args.map_benchmark_obstacle_metric,
+        )
+        benchmark_obstacle_pr = benchmark_metric_selection["primary"]
         mapping_quality_summary = compute_mapping_quality_summary(
             loop_closure_drift=loop_closure,
             map_consistency_score=consistency,
@@ -684,7 +692,12 @@ def main():
             "occupancy_confidence_concentration": occupancy_confidence,
             "obstacle_precision_recall": obstacle_pr,
             "obstacle_object_precision_recall": obstacle_object_pr,
-            "benchmark_obstacle_metric": args.map_benchmark_obstacle_metric,
+            "benchmark_obstacle_metric": benchmark_metric_selection["selected_metric"],
+            "benchmark_obstacle_metric_configured": args.map_benchmark_obstacle_metric,
+            "benchmark_obstacle_metric_selection_reason": benchmark_metric_selection["selection_reason"],
+            "benchmark_obstacle_metric_primary": benchmark_metric_selection["primary"],
+            "benchmark_obstacle_metric_alternate": benchmark_metric_selection["alternate"],
+            "benchmark_obstacle_metric_alternate_name": benchmark_metric_selection["alternate_metric"],
             "loop_closure_corrections_applied": lc_summary.get("corrections_applied", 0),
             "mean_correction_translation_m": lc_summary.get("mean_correction_translation_m", 0.0),
             "mean_correction_heading_rad": lc_summary.get("mean_correction_heading_rad", 0.0),
@@ -693,6 +706,7 @@ def main():
             "loop_closure_summary": lc_summary,
             "mapping_quality_summary": mapping_quality_summary,
             "backend_summary": mapper.backend_summary(),
+            "event_summary": event_summary,
         }
         pose_stats = mapper.pose_stats()
     else:

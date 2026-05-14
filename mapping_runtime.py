@@ -38,6 +38,9 @@ class MapEvent:
     confidence: float
     track_id: int
     timestamp: float
+    anchor_grid_xy: Optional[Tuple[int, int]] = None
+    anchor_world_xy: Optional[Tuple[float, float]] = None
+    footprint_role: str = ""
 
 
 @dataclass
@@ -188,6 +191,23 @@ class LiveMapper:
             if self.mapping_backend == "orb_slam_like"
             else "active"
         )
+        self.projection_anchor_mode = "bottom_center"
+        self.default_footprint_shape = "class_aware"
+        self.default_footprint_radius_by_label = {
+            "person": 1,
+            "chair": 1,
+            "table": 2,
+            "sofa": 2,
+            "tv": 1,
+        }
+        self.range_hint_by_label = {
+            "person": {"multiplier": 0.75, "min": 0.25, "max": 3.5},
+            "chair": {"multiplier": 0.90, "min": 0.35, "max": 4.0},
+            "table": {"multiplier": 1.05, "min": 0.45, "max": 4.8},
+            "sofa": {"multiplier": 1.00, "min": 0.45, "max": 4.8},
+            "tv": {"multiplier": 1.05, "min": 0.40, "max": 4.5},
+        }
+        self.object_projection_history: Dict[Tuple[str, int], Tuple[int, int]] = {}
 
         self.grid = np.full((self.grid_size, self.grid_size), 0.5, dtype=np.float32)
         self.pose = PoseSample(
@@ -407,13 +427,21 @@ class LiveMapper:
         return float(np.clip(0.30 / math.sqrt(area_ratio), 0.4, 4.0))
 
     def _class_range_adjustment(self, label: str, rng: float) -> float:
-        if label == "person":
-            return float(np.clip(rng * 0.85, 0.3, 4.0))
-        if label == "chair":
-            return float(np.clip(rng * 0.95, 0.3, 4.0))
-        if label == "table":
-            return float(np.clip(rng * 1.1, 0.3, 5.0))
-        return rng
+        cfg = self.range_hint_by_label.get(label)
+        if not cfg:
+            return rng
+        return float(np.clip(rng * float(cfg["multiplier"]), float(cfg["min"]), float(cfg["max"])))
+
+    def _detection_anchor(self, det: dict, frame_shape: Sequence[int]) -> Tuple[float, float]:
+        h, w = int(frame_shape[0]), int(frame_shape[1])
+        if "bbox" in det:
+            x1, y1, x2, y2 = det["bbox"]
+            x1 = float(np.clip(x1, 0, w - 1))
+            x2 = float(np.clip(x2, 0, w - 1))
+            y2 = float(np.clip(y2, 0, h - 1))
+            return (0.5 * (x1 + x2), y2)
+        cx, cy = det.get("center", (w / 2.0, h / 2.0))
+        return float(np.clip(cx, 0, w - 1)), float(np.clip(cy, 0, h - 1))
 
     def _depth_range_for_detection(self, det: dict, depth_map: Optional[np.ndarray]) -> Optional[float]:
         if depth_map is None:
@@ -429,7 +457,10 @@ class LiveMapper:
             y2 = int(np.clip(y2, 0, h - 1))
             if x2 <= x1 or y2 <= y1:
                 return None
-            crop = depth_map[y1:y2 + 1, x1:x2 + 1]
+            box_h = max(1, y2 - y1 + 1)
+            lower_start = y1 + int(round(box_h * 0.65))
+            lower_start = int(np.clip(lower_start, y1, y2))
+            crop = depth_map[lower_start:y2 + 1, x1:x2 + 1]
         else:
             cx, cy = det["center"]
             cx = int(np.clip(cx, 0, w - 1))
@@ -467,15 +498,60 @@ class LiveMapper:
             return False
         return len(set(hist)) <= 2
 
+    def _smoothed_projection_cell(self, track_id: int, label: str, cell: Tuple[int, int]) -> Tuple[int, int]:
+        key = (str(label), int(track_id))
+        prev = self.object_projection_history.get(key)
+        if prev is None:
+            self.object_projection_history[key] = cell
+            return cell
+        if max(abs(cell[0] - prev[0]), abs(cell[1] - prev[1])) <= 1:
+            self.object_projection_history[key] = prev
+            return prev
+        self.object_projection_history[key] = cell
+        return cell
+
+    def _footprint_shape_for_label(self, label: str) -> str:
+        shape = self.obstacle_footprint_shape
+        if self.obstacle_footprint_radius_cells == 0 and shape == "square":
+            shape = self.default_footprint_shape
+        if shape == "class_aware":
+            if label == "person":
+                return "vertical"
+            if label in ("table", "sofa", "tv"):
+                return "horizontal"
+            if label == "chair":
+                return "cross"
+            return "square"
+        return shape
+
+    def _footprint_radius_for_detection(self, center: Tuple[int, int], label: str, det: Optional[dict] = None) -> int:
+        radius = self.obstacle_footprint_radius_cells
+        if radius <= 0:
+            radius = int(self.default_footprint_radius_by_label.get(label, 0))
+        if not det or "bbox" not in det:
+            return max(0, int(radius))
+        x1, y1, x2, y2 = det["bbox"]
+        box_w = max(1.0, float(x2) - float(x1))
+        box_h = max(1.0, float(y2) - float(y1))
+        box_span = max(box_w, box_h)
+        frame_h = max(1.0, float(det.get("frame_h", 480)))
+        frame_w = max(1.0, float(det.get("frame_w", 640)))
+        span_ratio = box_span / max(1.0, min(frame_h, frame_w))
+        if span_ratio >= 0.28:
+            radius += 2
+        elif span_ratio >= 0.16:
+            radius += 1
+        return max(0, int(radius))
+
     def project_detection_to_world(
         self,
         det: dict,
         frame_shape: Sequence[int],
         depth_map: Optional[np.ndarray] = None,
-    ) -> Tuple[Tuple[float, float], Tuple[int, int]]:
+    ) -> Tuple[Tuple[float, float], Tuple[int, int], Tuple[float, float]]:
         pose_ref = self.mapping_pose()
         h, w = int(frame_shape[0]), int(frame_shape[1])
-        cx, cy = det["center"]
+        cx, cy = self._detection_anchor(det, frame_shape)
         area = max(1.0, float(det.get("area", 1.0)))
         area_ratio = area / float(max(1, w * h))
         bearing = self._bearing_for_detection(float(cx), w)
@@ -489,7 +565,9 @@ class LiveMapper:
         wx = pose_ref.x + rng * math.cos(ang)
         wy = pose_ref.y + rng * math.sin(ang)
         gx, gy = self.world_to_grid(wx, wy)
-        return (wx, wy), (gx, gy)
+        smooth_gx, smooth_gy = self._smoothed_projection_cell(int(det.get("track_id", -1)), str(det.get("label", "")), (gx, gy))
+        smooth_wx, smooth_wy = self.grid_to_world(smooth_gx, smooth_gy)
+        return (smooth_wx, smooth_wy), (smooth_gx, smooth_gy), (wx, wy)
 
     def _ray_cells(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
         x0, y0 = start
@@ -517,19 +595,10 @@ class LiveMapper:
         row = self.cell_event_counts.setdefault(cell, {"hit": 0, "free": 0})
         row[key] = row.get(key, 0) + 1
 
-    def _obstacle_footprint_cells(self, center: Tuple[int, int], label: str = "") -> List[Tuple[int, int]]:
+    def _obstacle_footprint_cells(self, center: Tuple[int, int], label: str = "", det: Optional[dict] = None) -> List[Tuple[int, int]]:
         cx, cy = center
-        radius = self.obstacle_footprint_radius_cells
-        shape = self.obstacle_footprint_shape
-        if shape == "class_aware":
-            if label == "person":
-                shape = "vertical"
-            elif label in ("table", "sofa", "tv"):
-                shape = "horizontal"
-            elif label == "chair":
-                shape = "cross"
-            else:
-                shape = "square"
+        radius = self._footprint_radius_for_detection(center, label, det=det)
+        shape = self._footprint_shape_for_label(label)
 
         cells = []
         for gy in range(cy - radius, cy + radius + 1):
@@ -567,13 +636,32 @@ class LiveMapper:
             label = obj.get("label", "other")
             if label not in ("person", "chair", "table", "sofa", "tv"):
                 continue
-            (wx, wy), (gx, gy) = self.project_detection_to_world(obj, frame_shape, depth_map=depth_map)
+            obj_with_meta = dict(obj)
+            obj_with_meta["track_id"] = int(obj_id)
+            obj_with_meta["frame_h"] = int(frame_shape[0])
+            obj_with_meta["frame_w"] = int(frame_shape[1])
+            (wx, wy), (gx, gy), (anchor_wx, anchor_wy) = self.project_detection_to_world(obj_with_meta, frame_shape, depth_map=depth_map)
             conf = float(obj.get("confidence", 0.0))
             is_persistent = self._is_persistent_detection(int(obj_id), str(label), (gx, gy))
             strong_count += 1 if is_persistent else 0
             weak_count += 0 if is_persistent else 1
             inc = self._weighted_step(self.obstacle_increment, conf, strong=is_persistent)
-            for cell in self._obstacle_footprint_cells((gx, gy), label=str(label)):
+            footprint_cells = self._obstacle_footprint_cells((gx, gy), label=str(label), det=obj_with_meta)
+            events.append(
+                MapEvent(
+                    event_type="obstacle_anchor",
+                    grid_xy=(gx, gy),
+                    world_xy=(wx, wy),
+                    label=label,
+                    confidence=conf,
+                    track_id=int(obj_id),
+                    timestamp=float(timestamp),
+                    anchor_grid_xy=(gx, gy),
+                    anchor_world_xy=(anchor_wx, anchor_wy),
+                    footprint_role="anchor",
+                )
+            )
+            for cell in footprint_cells:
                 cell_x, cell_y = cell
                 self.grid[cell_y, cell_x] = min(1.0, self.grid[cell_y, cell_x] + inc)
                 self._record_cell_event(cell, "hit")
@@ -587,11 +675,20 @@ class LiveMapper:
                         confidence=conf,
                         track_id=int(obj_id),
                         timestamp=float(timestamp),
+                        anchor_grid_xy=(gx, gy),
+                        anchor_world_xy=(anchor_wx, anchor_wy),
+                        footprint_role=("anchor" if cell == (gx, gy) else "footprint"),
                     )
                 )
 
+            obstacle_cells = set(footprint_cells)
             ray = self._ray_cells(pose_cell, (gx, gy))
-            for cell_idx, (rx, ry) in enumerate(ray[:-1]):
+            carve_cells = list(ray[:-1])
+            while carve_cells and carve_cells[-1] in obstacle_cells:
+                carve_cells.pop()
+            if carve_cells:
+                carve_cells = carve_cells[:-1]
+            for cell_idx, (rx, ry) in enumerate(carve_cells):
                 if cell_idx % self.ray_step_cells != 0:
                     continue
                 dec = self._weighted_step(self.free_decrement, conf, strong=is_persistent)
@@ -606,6 +703,9 @@ class LiveMapper:
                         confidence=conf,
                         track_id=int(obj_id),
                         timestamp=float(timestamp),
+                        anchor_grid_xy=(gx, gy),
+                        anchor_world_xy=(anchor_wx, anchor_wy),
+                        footprint_role="ray",
                     )
                 )
 
@@ -664,6 +764,18 @@ class LiveMapper:
             "has_camera_calibration": self.camera_calibration is not None,
             "depth_unit_scale": float(self.depth_unit_scale),
             "inverse_depth": bool(self.inverse_depth),
+            "projection_anchor_mode": self.projection_anchor_mode,
+        }
+
+    def event_summary(self) -> dict:
+        anchor_events = [e for e in self.map_events if e.event_type == "obstacle_anchor"]
+        footprint_events = [e for e in self.map_events if e.event_type == "obstacle_mark"]
+        return {
+            "projection_anchor_mode": self.projection_anchor_mode,
+            "anchor_events": len(anchor_events),
+            "footprint_events": len(footprint_events),
+            "anchor_cells_unique": len({e.grid_xy for e in anchor_events}),
+            "footprint_cells_unique": len({e.grid_xy for e in footprint_events}),
         }
 
     def loop_closure_summary(self) -> dict:
@@ -953,13 +1065,26 @@ def compute_obstacle_object_precision_recall(
     pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
     match_radius_cells: int = 0,
 ) -> dict:
-    frames = sorted(set(gt_obstacles_by_frame.keys()) & set(pred_obstacles_by_frame.keys()))
+    gt_components_by_frame = {frame: _connected_cell_components(cells) for frame, cells in gt_obstacles_by_frame.items()}
+    return compute_obstacle_object_precision_recall_from_components(
+        gt_components_by_frame=gt_components_by_frame,
+        pred_obstacles_by_frame=pred_obstacles_by_frame,
+        match_radius_cells=match_radius_cells,
+    )
+
+
+def compute_obstacle_object_precision_recall_from_components(
+    gt_components_by_frame: Dict[int, List[Set[Tuple[int, int]]]],
+    pred_obstacles_by_frame: Dict[int, Set[Tuple[int, int]]],
+    match_radius_cells: int = 0,
+) -> dict:
+    frames = sorted(set(gt_components_by_frame.keys()) & set(pred_obstacles_by_frame.keys()))
     if not frames:
         return {"available": False, "reason": "No overlapping obstacle frames"}
     radius = max(0, int(match_radius_cells))
     tp = fp = fn = 0
     for f in frames:
-        gt_components = _connected_cell_components(gt_obstacles_by_frame.get(f, set()))
+        gt_components = [set(component) for component in gt_components_by_frame.get(f, [])]
         pred_components = _connected_cell_components(pred_obstacles_by_frame.get(f, set()))
         matched_gt: Set[int] = set()
         for pred_component in pred_components:
@@ -988,6 +1113,25 @@ def compute_obstacle_object_precision_recall(
     return out
 
 
+def select_benchmark_obstacle_metric(cell_metric: dict, object_metric: dict, configured_metric: str = "cell") -> dict:
+    configured_metric = str(configured_metric or "cell")
+    preferred_metric = configured_metric
+    reason = "configured_metric"
+    if configured_metric == "cell" and object_metric.get("available") and cell_metric.get("available"):
+        if float(object_metric.get("f1", 0.0)) >= float(cell_metric.get("f1", 0.0)) + 0.05:
+            preferred_metric = "object"
+            reason = "object_metric_better_matches_blob_annotations"
+    selected = object_metric if preferred_metric == "object" else cell_metric
+    alternate = cell_metric if preferred_metric == "object" else object_metric
+    return {
+        "selected_metric": preferred_metric,
+        "selection_reason": reason,
+        "primary": selected,
+        "alternate_metric": "cell" if preferred_metric == "object" else "object",
+        "alternate": alternate,
+    }
+
+
 def load_run_annotations(path: str) -> dict:
     if not path:
         return {"available": False, "reason": "No annotation file provided"}
@@ -1000,16 +1144,41 @@ def load_run_annotations(path: str) -> dict:
         if "frame" in row and "label" in row:
             labels[int(row["frame"])] = str(row["label"]).strip().upper()
     obstacles = {}
+    obstacle_components = {}
     for row in raw.get("obstacles", []):
-        if "frame" not in row or "grid_xy" not in row:
+        if "frame" not in row:
             continue
         frame = int(row["frame"])
-        gx, gy = int(row["grid_xy"][0]), int(row["grid_xy"][1])
-        obstacles.setdefault(frame, set()).add((gx, gy))
+        if "component_cells" in row:
+            component_cells = set()
+            for cell in row.get("component_cells", []):
+                if not isinstance(cell, (list, tuple)) or len(cell) != 2:
+                    continue
+                gx, gy = int(cell[0]), int(cell[1])
+                component_cells.add((gx, gy))
+                obstacles.setdefault(frame, set()).add((gx, gy))
+            if component_cells:
+                obstacle_components.setdefault(frame, []).append(component_cells)
+        elif "grid_cells" in row:
+            component_cells = set()
+            for cell in row.get("grid_cells", []):
+                if not isinstance(cell, (list, tuple)) or len(cell) != 2:
+                    continue
+                gx, gy = int(cell[0]), int(cell[1])
+                component_cells.add((gx, gy))
+                obstacles.setdefault(frame, set()).add((gx, gy))
+            if component_cells:
+                obstacle_components.setdefault(frame, []).append(component_cells)
+        elif "grid_xy" in row:
+            gx, gy = int(row["grid_xy"][0]), int(row["grid_xy"][1])
+            cell = (gx, gy)
+            obstacles.setdefault(frame, set()).add(cell)
+            obstacle_components.setdefault(frame, []).append({cell})
     return {
         "available": True,
         "frame_labels": labels,
         "obstacles_by_frame": obstacles,
+        "obstacle_components_by_frame": obstacle_components,
         "raw": raw,
     }
 

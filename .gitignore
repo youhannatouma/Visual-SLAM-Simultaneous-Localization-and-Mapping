@@ -25,6 +25,7 @@ videos/
 data/processed_*/
 data/raw/session_*.csv
 data/raw/autolabel_*.csv
+data/raw/media_labeled_img*.csv
 reports/runtime/
 reports/capture/
 reports/media_review_*.csv
@@ -59,6 +60,11 @@ data/processed_epoch_sweep*/
 data/processed_tuning*/
 data/raw_candidate_highacc/
 data/raw_archive/
+data/processed/train.csv
+data/processed/val.csv
+data/processed/test.csv
+data/processed/fresh_real_eval.csv
+data/processed/metadata.json
 
 # Temporary files
 *.tmp
