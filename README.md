@@ -131,16 +131,6 @@ scripts/run_reasoning_training_pipeline.sh --python-bin .venv311/bin/python
 
 Current promotion status is tracked in `reports/promotion_summary.json`. If it says `not_promoted`, use the recommended actions there before replacing the promoted model.
 
-## Deployment
-
-The first supported deployment target is a single-machine CLI release.
-
-- Operator runbook: `deployment/DEPLOYMENT_RUNBOOK.md`
-- Release contract: `deployment/release_contract.json`
-- Pre-release validation: `.venv311/bin/python scripts/validate_release.py --python-bin .venv311/bin/python`
-
-The current promoted model is shipped under a temporary operational promotion policy. Treat that policy as release governance for this channel, not as the long-term research-quality bar.
-
 ## What Is Still Not Full VSLAM
 
 To become real VSLAM, the project still needs calibrated camera motion, keyframes, persistent landmarks, triangulation/depth-scale grounding, pose graph optimization, relocalization, and true loop closure. The current map is a useful semantic occupancy grid for navigation experiments, but it should be described as heuristic/depth-aided mapping unless an external SLAM backend is integrated.
