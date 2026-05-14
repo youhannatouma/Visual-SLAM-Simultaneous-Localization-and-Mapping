@@ -48,6 +48,8 @@ reports/confusion_matrix.png
 reports/fresh_real_misclassifications*.csv
 reports/correction_shortlist*.csv
 reports/review_status/*.json
+reports/dataset_audit_preview*.json
+reports/review_corrections_img*.csv
 models/seed_sweep*/
 models/epoch_sweep*/
 models/track1/
@@ -60,6 +62,7 @@ data/raw_archive/
 
 # Temporary files
 *.tmp
+tmp/
 
 # Local virtualenvs and local install files
 .venv*/

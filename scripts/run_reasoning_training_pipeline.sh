@@ -246,6 +246,7 @@ fi
   --min-free-gb "$DISK_MIN_FREE_GB" \
   --budget-report reports/artifact_budget.json \
   --protect-prefix "$(basename "$REPORT")" \
+  --protect-prefix "$(basename "$PROMOTION_BASELINE_PATH")" \
   "${PRUNE_ARGS[@]}"
 
 echo "[2/4] Running dataset audit..."
