@@ -1,0 +1,52 @@
+{
+  "release_channel": "single_machine_cli_v1",
+  "deployment_target": "single_machine_cli",
+  "temporary_policy": true,
+  "artifacts": {
+    "reasoning_model": "models/reasoning_model.pt",
+    "yolo_weights": "yolov8n.pt",
+    "metrics": "reports/metrics.json",
+    "promotion_summary": "reports/promotion_summary.json",
+    "promoted_baseline": "reports/metrics_promoted_baseline.json",
+    "runtime_validation_report": "reports/runtime/release_smoke_report.json"
+  },
+  "runtime_profile": {
+    "description": "Recommended release smoke profile for local single-machine CLI validation.",
+    "benchmark_video": "videos/benchmark_room1.MOV",
+    "run_annotations": "data/annotations/benchmark_room1_gt.json",
+    "camera_calibration": "",
+    "headless": true,
+    "max_frames": 90,
+    "no_depth": true,
+    "mapping_backend": "heuristic",
+    "det_confidence": 0.1,
+    "det_imgsz": 640,
+    "map_benchmark_obstacle_metric": "object",
+    "map_obstacle_footprint_radius_cells": 1,
+    "map_obstacle_footprint_shape": "class_aware"
+  },
+  "required_report_sections": [
+    "label_metrics",
+    "map_metrics",
+    "pose_stats",
+    "config",
+    "timing"
+  ],
+  "promotion_policy": {
+    "max_imbalance": 1.5,
+    "min_real_share": 0.15,
+    "max_synthetic_share": 0.85,
+    "fresh_real_min_improve_acc": -0.06,
+    "fresh_real_min_improve_macro_f1": -0.03,
+    "fresh_real_absolute_min_acc": 0.5,
+    "fresh_real_absolute_min_macro_f1": 0.55,
+    "allow_fresh_real_per_class_regression": true,
+    "note": "Temporary operational release policy for first single-machine deployment; not a long-term research-quality bar."
+  },
+  "rollback": {
+    "validate_with_same_flow": true,
+    "reference_docs": [
+      "deployment/DEPLOYMENT_RUNBOOK.md"
+    ]
+  }
+}

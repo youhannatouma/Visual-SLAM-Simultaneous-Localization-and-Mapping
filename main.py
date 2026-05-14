@@ -52,6 +52,10 @@ class SharedState:
 state = SharedState()
 
 
+DEFAULT_REASONING_MODEL_PATH = "models/reasoning_model.pt"
+DEFAULT_DETECTION_MODEL_PATH = "yolov8n.pt"
+
+
 def detection_worker(model_path="yolov8n.pt", det_confidence=0.25, det_imgsz=320):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[Detection] Running on: {device.upper()}")
@@ -290,6 +294,24 @@ def parse_args():
     return p.parse_args()
 
 
+def _release_file_check(path: str, label: str):
+    if not path:
+        raise FileNotFoundError(f"{label} path is empty")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{label} not found: {path}")
+
+
+def validate_release_inputs(args):
+    _release_file_check(DEFAULT_DETECTION_MODEL_PATH, "YOLO weights")
+    _release_file_check(DEFAULT_REASONING_MODEL_PATH, "Reasoning model checkpoint")
+    if args.video:
+        _release_file_check(args.video, "Video file")
+    if args.camera_calibration:
+        _release_file_check(args.camera_calibration, "Camera calibration file")
+    if args.run_annotations:
+        _release_file_check(args.run_annotations, "Benchmark annotation file")
+
+
 def main():
     args = parse_args()
     if args.benchmark_video:
@@ -297,9 +319,9 @@ def main():
             raise ValueError("--video and --benchmark-video refer to different files")
         args.video = args.benchmark_video
 
+    validate_release_inputs(args)
+
     if args.video:
-        if not os.path.exists(args.video):
-            raise FileNotFoundError(f"Video file not found: {args.video}")
         cap = cv2.VideoCapture(args.video)
         source_label = f"VIDEO: {os.path.basename(args.video)}"
         is_video_file = True

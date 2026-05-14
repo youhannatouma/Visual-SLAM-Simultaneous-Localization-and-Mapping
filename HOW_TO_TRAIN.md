@@ -53,6 +53,8 @@ cat reports/promotion_summary.json
 
 Only treat a model as promoted when `promotable` is `true`. If the run is `not_promoted`, follow the targeted recommendations in the summary before retraining.
 
+The current single-machine deployment channel uses a temporary operational promotion policy. See `deployment/DEPLOYMENT_RUNBOOK.md` and `deployment/release_contract.json` for the release contract and validation path.
+
 ## 4. Runtime Validation
 
 Run a benchmark video with annotations:
@@ -67,6 +69,16 @@ Run a benchmark video with annotations:
 ```
 
 The current `mapping_benchmark_gt.json` is a starter template. Replace it with real per-frame annotations before using mapping promotion results seriously.
+
+## Deployment Validation
+
+Before treating the current promoted model as deployable, run:
+
+```bash
+.venv311/bin/python scripts/validate_release.py --python-bin .venv311/bin/python
+```
+
+This is the canonical pre-release validation flow for the single-machine CLI deployment target.
 
 ## 5. Important Limit
 
