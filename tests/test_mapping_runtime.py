@@ -11,12 +11,14 @@ from mapping_runtime import (
     compute_map_consistency_score,
     compute_mapping_quality_summary,
     compute_obstacle_object_precision_recall,
+    compute_obstacle_object_precision_recall_from_components,
     compute_obstacle_precision_recall,
     compute_obstacle_persistence_stability,
     compute_occupancy_confidence_concentration,
     compute_pose_jitter_score,
     load_camera_calibration,
     load_run_annotations,
+    select_benchmark_obstacle_metric,
 )
 
 
@@ -30,7 +32,7 @@ class MappingRuntimeTests(unittest.TestCase):
     def test_projection_bounds(self):
         mapper = LiveMapper(grid_size=30, meters_per_cell=0.2)
         det = {"center": (639, 479), "area": 8000, "confidence": 0.9}
-        _, (gx, gy) = mapper.project_detection_to_world(det, (480, 640, 3))
+        _, (gx, gy), _ = mapper.project_detection_to_world(det, (480, 640, 3))
         self.assertGreaterEqual(gx, 0)
         self.assertGreaterEqual(gy, 0)
         self.assertLess(gx, 30)
@@ -41,9 +43,16 @@ class MappingRuntimeTests(unittest.TestCase):
         mapper.pose = PoseSample(5.0, 5.0, 0.0, 1.0)
         mapper.corrected_pose = PoseSample(2.0, 3.0, 0.0, 1.0)
         det = {"center": (320, 240), "area": 12000, "confidence": 0.9, "label": "chair"}
-        (wx, wy), _ = mapper.project_detection_to_world(det, (480, 640, 3))
+        (wx, wy), _, _ = mapper.project_detection_to_world(det, (480, 640, 3))
         self.assertLess(abs(wx - mapper.corrected_pose.x), abs(wx - mapper.pose.x))
         self.assertLess(abs(wy - mapper.corrected_pose.y), abs(wy - mapper.pose.y))
+
+    def test_projection_uses_bottom_center_anchor_for_tall_boxes(self):
+        mapper = LiveMapper(grid_size=80, meters_per_cell=0.1)
+        det = {"center": (320, 140), "bbox": (300, 40, 340, 300), "area": 10400, "confidence": 0.9, "label": "person", "track_id": 1}
+        _, (gx, gy), (raw_wx, raw_wy) = mapper.project_detection_to_world(det, (480, 640, 3))
+        self.assertEqual((gx, gy), mapper.world_to_grid(raw_wx, raw_wy))
+        self.assertGreaterEqual(raw_wy, mapper.pose.y)
 
     def test_gitignore_has_no_conflict_markers(self):
         gitignore = Path(__file__).resolve().parents[1] / ".gitignore"
@@ -78,9 +87,19 @@ class MappingRuntimeTests(unittest.TestCase):
         )
         det = {"center": (320, 240), "bbox": (310, 230, 330, 250), "area": 400, "confidence": 0.9, "label": "chair"}
         depth_map = __import__("numpy").full((480, 640), 2.0, dtype="float32")
-        (wx, wy), _ = mapper.project_detection_to_world(det, (480, 640, 3), depth_map=depth_map)
+        (wx, wy), _, _ = mapper.project_detection_to_world(det, (480, 640, 3), depth_map=depth_map)
         self.assertAlmostEqual(wx - mapper.pose.x, 2.0, places=3)
         self.assertAlmostEqual(wy - mapper.pose.y, 0.0, places=3)
+
+    def test_depth_projection_prefers_lower_bbox_slice_and_filters_invalids(self):
+        cal = CameraCalibration(fx=500.0, fy=500.0, cx=320.0, cy=240.0)
+        mapper = LiveMapper(grid_size=80, meters_per_cell=0.1, camera_calibration=cal, mapping_backend="depth")
+        det = {"center": (320, 220), "bbox": (300, 200, 340, 320), "area": 4800, "confidence": 0.9, "label": "chair", "track_id": 1}
+        depth_map = __import__("numpy").full((480, 640), 6.0, dtype="float32")
+        depth_map[278:321, 300:341] = 1.5
+        depth_map[290:295, 315:320] = 0.0
+        (wx, _), _, _ = mapper.project_detection_to_world(det, (480, 640, 3), depth_map=depth_map)
+        self.assertAlmostEqual(wx - mapper.pose.x, 1.5, places=2)
 
     def test_calibrated_pose_update_uses_intrinsics_and_depth(self):
         cal = CameraCalibration(fx=500.0, fy=500.0, cx=320.0, cy=240.0)
@@ -189,7 +208,7 @@ class MappingRuntimeTests(unittest.TestCase):
         base = float(mapper.grid[10, 10])
         mapper.frame_obstacles = {}
         tracked = {1: {"label": "chair", "confidence": 1.0, "center": (320, 240), "area": 20000}}
-        _, (gx, gy) = mapper.project_detection_to_world(tracked[1], (480, 640, 3))
+        _, (gx, gy), _ = mapper.project_detection_to_world(tracked[1], (480, 640, 3))
         mapper.update_from_tracked(tracked, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
         high_conf = float(mapper.grid[gy, gx] - base)
 
@@ -201,10 +220,34 @@ class MappingRuntimeTests(unittest.TestCase):
         )
         base2 = float(mapper2.grid[10, 10])
         tracked2 = {1: {"label": "chair", "confidence": 0.1, "center": (320, 240), "area": 20000}}
-        _, (gx2, gy2) = mapper2.project_detection_to_world(tracked2[1], (480, 640, 3))
+        _, (gx2, gy2), _ = mapper2.project_detection_to_world(tracked2[1], (480, 640, 3))
         mapper2.update_from_tracked(tracked2, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
         low_conf = float(mapper2.grid[gy2, gx2] - base2)
         self.assertGreater(high_conf, low_conf)
+
+    def test_projection_smoothing_reuses_previous_cell_for_small_jitter(self):
+        mapper = LiveMapper(grid_size=50, meters_per_cell=0.1)
+        det1 = {"label": "chair", "confidence": 0.9, "center": (320, 240), "bbox": (300, 200, 340, 260), "area": 2400, "track_id": 7}
+        det2 = {"label": "chair", "confidence": 0.9, "center": (324, 242), "bbox": (304, 202, 344, 262), "area": 2400, "track_id": 7}
+        _, cell1, _ = mapper.project_detection_to_world(det1, (480, 640, 3))
+        _, cell2, _ = mapper.project_detection_to_world(det2, (480, 640, 3))
+        self.assertEqual(cell1, cell2)
+
+    def test_free_space_ray_stops_before_footprint(self):
+        mapper = LiveMapper(
+            grid_size=60,
+            meters_per_cell=0.1,
+            obstacle_footprint_radius_cells=1,
+            obstacle_footprint_shape="square",
+            confidence_weighting=False,
+        )
+        tracked = {1: {"label": "chair", "confidence": 0.95, "center": (320, 240), "bbox": (260, 180, 380, 340), "area": 19200}}
+        events = mapper.update_from_tracked(tracked, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
+        footprint = set(mapper.frame_obstacles[1])
+        ray_cells = {e.grid_xy for e in events if e.event_type == "free_space_ray"}
+        self.assertTrue(footprint)
+        self.assertTrue(ray_cells)
+        self.assertTrue(ray_cells.isdisjoint(footprint))
 
     def test_persistence_weak_then_strong(self):
         mapper = LiveMapper(obstacle_persistence_frames=2, obstacle_increment=0.2, confidence_weighting=False)
@@ -256,6 +299,24 @@ class MappingRuntimeTests(unittest.TestCase):
         self.assertTrue(ann["available"])
         self.assertEqual(len(ann["frame_labels"]), 2)
         self.assertGreaterEqual(len(ann["obstacles_by_frame"]), 2)
+        self.assertGreaterEqual(len(ann["obstacle_components_by_frame"]), 2)
+
+    def test_annotation_loader_supports_grouped_components(self):
+        payload = {
+            "frame_labels": [{"frame": 1, "label": "EXPLORE"}],
+            "obstacles": [
+                {"frame": 1, "component_cells": [[10, 10], [10, 11]]},
+                {"frame": 1, "grid_cells": [[20, 20], [21, 20]]},
+            ],
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(payload, f)
+            path = f.name
+        ann = load_run_annotations(path)
+        self.assertTrue(ann["available"])
+        self.assertEqual(len(ann["obstacle_components_by_frame"][1]), 2)
+        self.assertIn((10, 10), ann["obstacles_by_frame"][1])
+        self.assertIn((21, 20), ann["obstacles_by_frame"][1])
 
     def test_obstacle_precision_recall_exact_and_radius_matching(self):
         gt = {1: {(10, 10), (20, 20)}}
@@ -286,6 +347,44 @@ class MappingRuntimeTests(unittest.TestCase):
         self.assertEqual(out["fp"], 1)
         self.assertEqual(out["fn"], 0)
         self.assertEqual(out["metric"], "object_components")
+
+    def test_obstacle_object_precision_recall_uses_grouped_components(self):
+        gt_components = {
+            1: [
+                {(10, 10), (12, 10)},
+                {(30, 30), (31, 30)},
+            ]
+        }
+        pred = {1: {(10, 10), (11, 10), (30, 30)}}
+        out = compute_obstacle_object_precision_recall_from_components(gt_components, pred, match_radius_cells=1)
+        self.assertTrue(out["available"])
+        self.assertEqual(out["tp"], 2)
+        self.assertEqual(out["fn"], 0)
+
+    def test_metric_selection_reports_primary_and_alternate(self):
+        selection = select_benchmark_obstacle_metric(
+            cell_metric={"available": True, "f1": 0.12},
+            object_metric={"available": True, "f1": 0.41},
+            configured_metric="cell",
+        )
+        self.assertEqual(selection["selected_metric"], "object")
+        self.assertEqual(selection["alternate_metric"], "cell")
+        self.assertEqual(selection["selection_reason"], "object_metric_better_matches_blob_annotations")
+
+    def test_default_class_aware_footprint_expands_large_tables(self):
+        mapper = LiveMapper(grid_size=80, meters_per_cell=0.1)
+        small = mapper._obstacle_footprint_cells((20, 20), label="table", det={"bbox": (300, 200, 340, 240), "frame_h": 480, "frame_w": 640})
+        large = mapper._obstacle_footprint_cells((20, 20), label="table", det={"bbox": (200, 120, 520, 400), "frame_h": 480, "frame_w": 640})
+        self.assertGreater(len(large), len(small))
+
+    def test_event_summary_tracks_anchor_and_footprint_counts(self):
+        mapper = LiveMapper(grid_size=50, meters_per_cell=0.1, confidence_weighting=False)
+        tracked = {1: {"label": "chair", "confidence": 0.95, "center": (320, 240), "bbox": (290, 190, 350, 280), "area": 5400}}
+        mapper.update_from_tracked(tracked, frame_shape=(480, 640, 3), frame_index=1, timestamp=1.0)
+        summary = mapper.event_summary()
+        self.assertEqual(summary["projection_anchor_mode"], "bottom_center")
+        self.assertGreaterEqual(summary["anchor_events"], 1)
+        self.assertGreaterEqual(summary["footprint_events"], 1)
 
     def test_promotion_status_variants(self):
         base = {
