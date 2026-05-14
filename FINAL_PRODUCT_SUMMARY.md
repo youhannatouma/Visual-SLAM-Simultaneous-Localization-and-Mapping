@@ -181,29 +181,6 @@ Interactive labels use:
 
 The `ReasoningEngine.log_example()` method writes accepted examples to CSV after quality gates. It rejects samples with too many objects, tiny objects, or low average detection confidence.
 
-### Media-Based Data Generation
-
-`scripts/build_reasoning_data_from_media.py` builds reasoning CSVs from image and video folders. It:
-
-- loads images/videos,
-- runs YOLO detection,
-- samples video frames by stride,
-- infers simple optical-flow motion,
-- assigns an automatic action label from detections,
-- extracts the same 43-feature schema as runtime,
-- writes rows with source metadata,
-- exports review CSVs,
-- applies optional correction CSVs,
-- writes correction audits, review status JSON, and coverage reports.
-
-Rows can be marked `needs_review` when cases are ambiguous, weak, crowded, or mixed chair/table scenes. Correction CSVs use:
-
-```text
-row_id,final_label,drop_row
-```
-
-This lets a reviewer relabel or drop generated rows before training.
-
 ### Dataset Audit
 
 `scripts/audit_reasoning_data.py` checks raw CSV quality before training:
@@ -255,8 +232,7 @@ Inside this repository, YOLO is not trained. The code uses `yolov8n.pt` as an ex
 YOLO is used for:
 
 - runtime object detection in `main.py`,
-- offline labeling/inference in `video_processor.py`,
-- media ingestion in `scripts/build_reasoning_data_from_media.py`.
+- offline labeling/inference in `video_processor.py`.
 
 The repository does not include:
 
@@ -329,29 +305,9 @@ Cleans, validates, balances, and splits raw reasoning data. Also builds a fresh-
 
 Creates a reproducible dataset manifest with file hashes, row counts, source/class distributions, processed file hashes, and a combined fingerprint. Also appends to a dataset changelog.
 
-### `scripts/build_reasoning_data_from_media.py`
-
-Builds reasoning training CSVs from image/video folders using YOLO detections. It writes review exports, applies reviewer corrections, writes correction audits, records review status, and reports batch coverage.
-
-### `scripts/build_stage2_real_sets.py`
-
-Builds stage-2 real holdout and training augmentation CSVs from archive/staging candidates while avoiding duplicates already present in active raw data. It can focus on hard negatives for a target class inferred from fresh-real metrics.
-
 ### `scripts/run_promotion_summary.py`
 
 Compares current training metrics against the promoted baseline. It checks test accuracy, key-class F1, fresh-real aggregate metrics, fresh-real minimum rows, optional absolute floors, and optional per-class regression. Writes `reports/promotion_summary.json`.
-
-### `scripts/run_reasoning_seed_sweep.py`
-
-Runs the guarded training pipeline across multiple random seeds. It stores per-seed processed data, models, metrics, and promotion summaries, ranks runs by fresh-real and test metrics, and can promote the best promotable seed to canonical outputs.
-
-### `scripts/run_track1_reasoning_loop.py`
-
-Higher-level Track 1 orchestration loop. It alternates comparable and real-recovery seed sweeps, evaluates fresh-real regressions, records recovery summaries, recommends targeted data refreshes, and enforces architecture-freeze constraints.
-
-### `scripts/triage_reasoning_confusions.py`
-
-Loads a trained reasoning model and a CSV split/holdout, runs sequence predictions, and exports rows matching a target confusion pair such as `CHECK_TABLE -> MOVE_TO_CHAIR`. Useful for manual review and targeted correction.
 
 ## Tests
 
