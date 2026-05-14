@@ -27,7 +27,8 @@
     "data/raw\\session_vid2_fixed.csv",
     "data/raw\\session_vid3_fixed.csv",
     "data/raw\\session_vid4_fixed.csv",
-    "data/raw\\simulated_room_people_chairs_tables_20260514_151245.csv"
+    "data/raw\\simulated_room_people_chairs_tables_20260514_151245.csv",
+    "data/raw\\simulated_room_people_chairs_tables_20260514_172617.csv"
   ],
   "balance": "oversample",
   "seed": 42,
@@ -37,32 +38,32 @@
     "test": 0.15
   },
   "cleaning": {
-    "rows_initial": 9740,
-    "rows_after_dropna": 9740,
-    "rows_after_finite_check": 9740,
-    "rows_after_label_filter": 9740,
-    "rows_after_dedup": 9040,
+    "rows_initial": 29740,
+    "rows_after_dropna": 29740,
+    "rows_after_finite_check": 29740,
+    "rows_after_label_filter": 29740,
+    "rows_after_dedup": 27397,
     "dropped_missing_required": 0,
     "dropped_non_finite": 0,
     "dropped_unknown_label": 0,
-    "dropped_duplicates": 700,
+    "dropped_duplicates": 2343,
     "feature_count": 43
   },
   "minimum_per_class": {
     "required": 50,
     "counts_after_clean": {
-      "AVOID_PERSON": 2328,
-      "MOVE_TO_CHAIR": 2372,
-      "CHECK_TABLE": 2285,
-      "EXPLORE": 2055
+      "AVOID_PERSON": 7328,
+      "MOVE_TO_CHAIR": 7372,
+      "CHECK_TABLE": 7285,
+      "EXPLORE": 5412
     }
   },
   "source_quality": {
     "real_rows": 1698,
-    "synthetic_rows": 7342,
-    "total_clean": 9040,
-    "real_share": 0.18783185840707964,
-    "synthetic_share": 0.8121681415929204,
+    "synthetic_rows": 25699,
+    "total_clean": 27397,
+    "real_share": 0.06197758878709348,
+    "synthetic_share": 0.9380224112129065,
     "min_real_share": 0.0,
     "max_synthetic_share": 1.0
   },
@@ -122,9 +123,9 @@
     "f42"
   ],
   "rows": {
-    "train": 6640,
-    "val": 1420,
-    "test": 1428,
-    "total": 9488
+    "train": 20640,
+    "val": 4420,
+    "test": 4428,
+    "total": 29488
   }
 }
