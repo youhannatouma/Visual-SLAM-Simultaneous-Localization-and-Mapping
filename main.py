@@ -44,6 +44,7 @@ class SharedState:
         self.running = True
         self.fps = 0
         self.lock = threading.Lock()
+        self.engine = None
 
 
 state = SharedState()
@@ -90,6 +91,8 @@ def detection_worker(model_path="yolov8n.pt", det_confidence=0.25, det_imgsz=320
 
 def reasoning_worker():
     engine = ReasoningEngine()
+    with state.lock:
+        state.engine = engine
     while state.running:
         with state.lock:
             dets = state.detections.copy()
@@ -429,18 +432,21 @@ def main():
                 prediction = midas(input_batch)
                 prediction = F.interpolate(prediction.unsqueeze(1), size=frame.shape[:2], mode="bicubic", align_corners=False).squeeze()
             depth_map = prediction.cpu().numpy()
-            depth_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-            depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_MAGMA)
             depth01 = cv2.normalize(depth_map, None, 0.0, 1.0, cv2.NORM_MINMAX).astype(np.float32)
             depth_metric_map = 0.4 + (1.0 - depth01) * 3.6
+            if not args.headless:
+                depth_normalized = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_MAGMA)
 
         with state.lock:
             state.frame = frame.copy()
-            snap_tracked = {k: dict(v) for k, v in state.tracked.items()}
-            snap_dets = list(state.detections)
+            _tracked_ref = state.tracked
+            _dets_ref = state.detections
             snap_decision = state.decision
             snap_state = state.engine_state
             snap_mode = state.use_model
+        snap_tracked = {k: dict(v) for k, v in _tracked_ref.items()}
+        snap_dets = list(_dets_ref)
 
         kp, des = orb.detectAndCompute(gray, None)
         motion_text = "No movement"
@@ -517,7 +523,9 @@ def main():
 
         action_label = parse_action_label(snap_decision)
         tracked_action_conf = action_confidence_from_tracked(action_label, snap_tracked)
-        model_action_conf = float(getattr(engine, "last_model_confidence", 0.0)) if snap_mode else 0.0
+        with state.lock:
+            live_engine = state.engine
+        model_action_conf = float(live_engine.last_model_confidence) if (snap_mode and live_engine) else 0.0
         action_conf = max(tracked_action_conf, model_action_conf)
         action_samples.append(
             ActionSample(
@@ -529,12 +537,33 @@ def main():
         )
         pred_actions_by_frame[frame_idx] = action_label
 
-        draw_hud_panel(out, 0, 0, 640, 38, alpha=0.60)
+        # Batch all semi-transparent HUD panels into one overlay pass
+        # instead of a full frame copy+blend per panel.
+        overlay = out.copy()
+        cv2.rectangle(overlay, (0, 0), (640, 38), (15, 15, 15), -1)
+        cv2.rectangle(overlay, (0, 38), (175, 238), (15, 15, 15), -1)
+        show_dets_panel = bool(snap_dets)
+        show_label_panel = bool(label_msg and time.time() - label_timer < 2.0)
+        if not show_label_panel and time.time() - label_timer >= 2.0:
+            label_msg = ""
+        if show_dets_panel:
+            cv2.rectangle(overlay, (0, 380), (175, 480), (15, 15, 15), -1)
+        if show_label_panel:
+            cv2.rectangle(overlay, (0, 450), (640, 480), (15, 15, 15), -1)
+        cv2.addWeighted(overlay, 0.55, out, 0.45, 0, out)
+
+        # Panel borders
+        cv2.rectangle(out, (0, 0), (640, 38), (60, 60, 60), 1)
+        cv2.rectangle(out, (0, 38), (175, 238), (60, 60, 60), 1)
+        if show_dets_panel:
+            cv2.rectangle(out, (0, 380), (175, 480), (60, 60, 60), 1)
+        if show_label_panel:
+            cv2.rectangle(out, (0, 450), (640, 480), (60, 60, 60), 1)
+
         state_col = STATE_COLOR.get(snap_state, C_WHITE)
         draw_text(out, f"  {snap_decision}", (4, 26), state_col, 0.65, 2)
         draw_text(out, f"{state.fps} FPS", (565, 26), C_GREEN, 0.60, 1)
 
-        draw_hud_panel(out, 0, 38, 175, 200, alpha=0.55)
         draw_text(out, "STATE", (8, 58), (130, 130, 130), 0.38)
         draw_text(out, snap_state, (8, 76), state_col, 0.52, 1)
         draw_text(out, "MOTION", (8, 100), (130, 130, 130), 0.38)
@@ -546,16 +575,12 @@ def main():
         draw_text(out, mode_lbl, (8, 160), mode_col, 0.50, 1)
         draw_text(out, source_label, (8, 182), (100, 100, 100), 0.34, 1)
 
-        if snap_dets:
-            draw_hud_panel(out, 0, 380, 175, 100, alpha=0.55)
+        if show_dets_panel:
             draw_text(out, "DETECTIONS", (8, 398), (130, 130, 130), 0.38)
             draw_confidence_bars(out, snap_dets, 0, 403)
 
-        if label_msg and time.time() - label_timer < 2.0:
-            draw_hud_panel(out, 0, 450, 640, 30, alpha=0.70)
+        if show_label_panel:
             draw_text(out, label_msg, (10, 470), label_color, 0.55, 1)
-        elif time.time() - label_timer >= 2.0:
-            label_msg = ""
 
         draw_text(out, "ESC:exit  M:toggle  A/C/T/E:label", (178, 472), (100, 100, 100), 0.38)
 
