@@ -115,7 +115,6 @@
   "fingerprint_sha256": "bbe4b7d30e7176bdb3aa94afffebd1e570375f4647d3867b59a780e60d8b0306",
   "policy": {
     "default_training_source": "data/raw",
-    "raw_archive_excluded_by_default": true,
-    "synthetic_requires_explicit_experiment": true
+    "raw_archive_excluded_by_default": true
   }
 }

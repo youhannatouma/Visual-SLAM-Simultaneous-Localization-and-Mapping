@@ -114,7 +114,6 @@ This release channel intentionally uses a temporary operational policy:
 
 - max dataset imbalance: `1.5`
 - min real share: `0.15`
-- max synthetic share: `0.85`
 - fresh-real accuracy delta floor: `-0.06`
 - fresh-real macro F1 delta floor: `-0.03`
 - fresh-real absolute accuracy floor: `0.50`

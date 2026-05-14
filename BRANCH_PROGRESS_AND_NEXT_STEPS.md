@@ -76,7 +76,6 @@ Notes:
 - Current single-machine deployment channel uses temporary operational release gates:
   - dataset imbalance `<= 1.5`
   - real share `>= 0.15`
-  - synthetic share `<= 0.85`
   - fresh-real accuracy delta `>= -0.06`
   - fresh-real macro F1 delta `>= -0.03`
   - fresh-real absolute floors: accuracy `>= 0.50`, macro F1 `>= 0.55`
@@ -109,7 +108,6 @@ Notes:
   - `EXPLORE`: `207`
 - imbalance ratio: `1.24` (passes `<=1.3`)
 - real share: `1.000` (passes `>=0.6`)
-- synthetic share: `0.000` (passes `<=0.4`)
 - independent real batches/sources: `6` (passes)
 - `ready_for_training=true`
 

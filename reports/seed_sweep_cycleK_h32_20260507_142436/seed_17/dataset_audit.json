@@ -152,12 +152,9 @@
   },
   "source_quality": {
     "real_rows": 1139,
-    "synthetic_rows": 0,
     "total_clean": 1139,
     "real_share": 1.0,
-    "synthetic_share": 0.0,
     "min_real_share": 0.6,
-    "max_synthetic_share": 0.4,
     "independent_real_batches_count": 9,
     "independent_real_batches": [
       "batch_A_real",
@@ -185,7 +182,6 @@
     "min_per_class_met": true,
     "imbalance_ok": true,
     "real_share_ok": true,
-    "synthetic_share_ok": true,
     "two_real_batches_ok": true,
     "scenario_quota_ok": true
   },

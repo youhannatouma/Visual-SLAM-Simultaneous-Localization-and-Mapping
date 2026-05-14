@@ -38,12 +38,9 @@
   },
   "source_quality": {
     "real_rows": 742,
-    "synthetic_rows": 0,
     "total_clean": 742,
     "real_share": 1.0,
-    "synthetic_share": 0.0,
-    "min_real_share": 0.6,
-    "max_synthetic_share": 0.4
+    "min_real_share": 0.6
   },
   "holdout_latest_real_source": {
     "enabled": true,

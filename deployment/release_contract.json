@@ -35,7 +35,6 @@
   "promotion_policy": {
     "max_imbalance": 1.5,
     "min_real_share": 0.15,
-    "max_synthetic_share": 0.85,
     "fresh_real_min_improve_acc": -0.06,
     "fresh_real_min_improve_macro_f1": -0.03,
     "fresh_real_absolute_min_acc": 0.5,

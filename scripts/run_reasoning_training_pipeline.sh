@@ -10,7 +10,6 @@ CHANGELOG_PATH="data/manifest/CHANGELOG.md"
 MIN_PER_CLASS=50
 MAX_IMBALANCE=1.5
 MIN_REAL_SHARE=0.15
-MAX_SYNTHETIC_SHARE=0.85
 BALANCE="oversample"
 SEED=42
 TRAIN_EPOCHS=30
@@ -61,7 +60,6 @@ Options:
   --min-per-class <n>            Minimum samples per class (default: 50).
   --max-imbalance <ratio>        Max class imbalance ratio (default: 1.5).
   --min-real-share <ratio>       Minimum real data share gate (default: 0.15).
-  --max-synthetic-share <ratio>  Maximum synthetic data share gate (default: 0.85).
   --balance <none|cap|oversample> Balancing strategy (default: oversample).
   --seed <n>                     Random seed for preprocessing (default: 42).
   --epochs <n>                   Training epochs (default: 30).
@@ -145,10 +143,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --min-real-share)
       MIN_REAL_SHARE="$2"
-      shift 2
-      ;;
-    --max-synthetic-share)
-      MAX_SYNTHETIC_SHARE="$2"
       shift 2
       ;;
     --seed)
@@ -315,7 +309,6 @@ echo "[2/4] Running dataset audit..."
   --min-per-class "$MIN_PER_CLASS" \
   --max-class-imbalance-ratio "$MAX_IMBALANCE" \
   --min-real-share "$MIN_REAL_SHARE" \
-  --max-synthetic-share "$MAX_SYNTHETIC_SHARE" \
   --require-two-real-batches \
   --report "$REPORT"
 
@@ -350,7 +343,6 @@ fi
   --balance "$BALANCE" \
   --min-per-class "$MIN_PER_CLASS" \
   --min-real-share "$MIN_REAL_SHARE" \
-  --max-synthetic-share "$MAX_SYNTHETIC_SHARE" \
   --enforce-review-applied \
   --require-two-real-batches-for-holdout \
   --holdout-latest-real-source \

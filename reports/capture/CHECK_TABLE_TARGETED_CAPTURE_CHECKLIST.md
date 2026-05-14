@@ -68,7 +68,7 @@ Apply these during review corrections for both batches:
 - Combined raw distribution must still satisfy strict audit:
   - imbalance <= 1.3
   - min per class gate
-  - real share / synthetic share gates
+  - real-data share gates
   - two-independent-real-batches holdout requirement
 
 ## Data Landing Paths

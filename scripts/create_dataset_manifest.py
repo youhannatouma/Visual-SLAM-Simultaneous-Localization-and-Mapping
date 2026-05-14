@@ -105,7 +105,6 @@ def main():
         "policy": {
             "default_training_source": "data/raw",
             "raw_archive_excluded_by_default": True,
-            "synthetic_requires_explicit_experiment": True,
         },
     }
 

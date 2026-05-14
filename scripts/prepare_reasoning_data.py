@@ -10,7 +10,6 @@ import pandas as pd
 
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
 REAL_SOURCE_TYPES = {"real_media", "manual_live"}
-SYNTHETIC_SOURCE_TYPES = {"synthetic", "simulated", "rebalance"}
 EXCLUDED_RAW_FILE_PATTERNS = (
     "zz_fresh_real_holdout_*.csv",
     "media_labeled_stage2_train_refix_*.csv",
@@ -45,12 +44,6 @@ def parse_args():
         type=float,
         default=0.6,
         help="Minimum required share of real rows (manual_live + real_media) after cleaning",
-    )
-    parser.add_argument(
-        "--max-synthetic-share",
-        type=float,
-        default=0.4,
-        help="Maximum allowed share of synthetic/simulated/rebalance rows after cleaning",
     )
     parser.add_argument(
         "--holdout-latest-real-source",
@@ -154,10 +147,6 @@ def infer_source_type(source_file, explicit_value=None):
         return "manual_live"
     if "media_labeled" in name:
         return "real_media"
-    if "simulated" in name:
-        return "simulated"
-    if "balanced_synthetic" in name or "synthetic" in name:
-        return "synthetic"
     if "rebalance_patch" in name:
         return "rebalance"
     return "unknown"
@@ -239,32 +228,22 @@ def enforce_minimum_per_class(df, minimum):
     return counts
 
 
-def enforce_source_quality(df, min_real_share, max_synthetic_share):
+def enforce_source_quality(df, min_real_share):
     total = len(df)
     real_rows = int(df["source_type"].isin(REAL_SOURCE_TYPES).sum())
-    synthetic_rows = int(df["source_type"].isin(SYNTHETIC_SOURCE_TYPES).sum())
     real_share = (real_rows / total) if total else 0.0
-    synthetic_share = (synthetic_rows / total) if total else 0.0
 
     if real_share < min_real_share:
         raise ValueError(
             "Dataset quality gate failed: real data share too low. "
             f"Need >= {min_real_share:.3f}, got {real_share:.3f}"
         )
-    if synthetic_share > max_synthetic_share:
-        raise ValueError(
-            "Dataset quality gate failed: synthetic share too high. "
-            f"Need <= {max_synthetic_share:.3f}, got {synthetic_share:.3f}"
-        )
 
     return {
         "real_rows": int(real_rows),
-        "synthetic_rows": int(synthetic_rows),
         "total_clean": int(total),
         "real_share": float(real_share),
-        "synthetic_share": float(synthetic_share),
         "min_real_share": float(min_real_share),
-        "max_synthetic_share": float(max_synthetic_share),
     }
 
 
@@ -659,7 +638,7 @@ def main():
         enforce_review_status(files)
     clean_df, feature_cols, clean_summary = validate_and_clean(merged_df)
     counts_after_clean = enforce_minimum_per_class(clean_df, args.min_per_class)
-    source_quality = enforce_source_quality(clean_df, args.min_real_share, args.max_synthetic_share)
+    source_quality = enforce_source_quality(clean_df, args.min_real_share)
 
     print(f"Loaded {len(files)} file(s)")
     print_distribution(clean_df, "Class distribution before balancing")

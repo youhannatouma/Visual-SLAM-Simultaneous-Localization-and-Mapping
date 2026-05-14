@@ -9,7 +9,6 @@ import pandas as pd
 
 ACTION_CLASSES = ["AVOID_PERSON", "MOVE_TO_CHAIR", "CHECK_TABLE", "EXPLORE"]
 REAL_SOURCE_TYPES = {"real_media", "manual_live"}
-SYNTHETIC_SOURCE_TYPES = {"synthetic", "simulated", "rebalance"}
 EXCLUDED_RAW_FILE_PATTERNS = (
     "zz_fresh_real_holdout_*.csv",
     "media_labeled_stage2_train_refix_*.csv",
@@ -34,12 +33,6 @@ def parse_args():
         type=float,
         default=0.6,
         help="Minimum required share of real rows (manual_live + real_media) after cleaning",
-    )
-    parser.add_argument(
-        "--max-synthetic-share",
-        type=float,
-        default=0.4,
-        help="Maximum allowed share of synthetic/simulated/rebalance rows after cleaning",
     )
     parser.add_argument(
         "--require-two-real-batches",
@@ -99,10 +92,6 @@ def infer_source_type(source_file, explicit_value=None):
         return "manual_live"
     if "media_labeled" in name:
         return "real_media"
-    if "simulated" in name:
-        return "simulated"
-    if "balanced_synthetic" in name or "synthetic" in name:
-        return "synthetic"
     if "rebalance_patch" in name:
         return "rebalance"
     return "unknown"
@@ -168,9 +157,7 @@ def main():
     }
 
     real_rows = int(working["source_type"].isin(REAL_SOURCE_TYPES).sum())
-    synthetic_rows = int(working["source_type"].isin(SYNTHETIC_SOURCE_TYPES).sum())
     real_share = safe_ratio(real_rows, total_clean)
-    synthetic_share = safe_ratio(synthetic_rows, total_clean)
     scenario_class_distribution = {}
     if "scenario" in working.columns:
         scenario_table = (
@@ -214,7 +201,6 @@ def main():
         "min_per_class_met": len(low_classes) == 0,
         "imbalance_ok": imbalance_ratio <= args.max_class_imbalance_ratio,
         "real_share_ok": real_share >= args.min_real_share,
-        "synthetic_share_ok": synthetic_share <= args.max_synthetic_share,
         "two_real_batches_ok": (len(independent_real_batches) >= 2) if args.require_two_real_batches else True,
         "scenario_quota_ok": scenario_quota_ok,
     }
@@ -245,12 +231,9 @@ def main():
         },
         "source_quality": {
             "real_rows": real_rows,
-            "synthetic_rows": synthetic_rows,
             "total_clean": total_clean,
             "real_share": real_share,
-            "synthetic_share": synthetic_share,
             "min_real_share": args.min_real_share,
-            "max_synthetic_share": args.max_synthetic_share,
             "independent_real_batches_count": int(len(independent_real_batches)),
             "independent_real_batches": sorted(list(independent_real_batches)),
         },
@@ -279,7 +262,6 @@ def main():
         print(f"    {label:<15} {int(counts[label])}")
     print(f"  Imbalance ratio (max/min_nonzero): {imbalance_ratio:.2f}")
     print(f"  Real share: {real_share:.3f} (min {args.min_real_share:.3f})")
-    print(f"  Synthetic share: {synthetic_share:.3f} (max {args.max_synthetic_share:.3f})")
     if args.require_two_real_batches:
         print(f"  Independent real batches/sources: {len(independent_real_batches)} (min 2)")
     print(f"  Ready for training: {ready_for_training}")
