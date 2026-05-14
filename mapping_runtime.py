@@ -486,6 +486,12 @@ class LiveMapper:
             return base_value * (1.0 if strong else 0.5)
         conf = float(np.clip(confidence, 0.0, 1.0))
         weight = 0.35 + (conf ** max(0.1, self.confidence_strength))
+        
+        # IMPROVEMENT: High-Confidence Reinforcement
+        # If the AI is >90% sure, we boost the map update speed by 50%
+        if conf > 0.90:
+            weight *= 1.5
+            
         if not strong:
             weight *= 0.55
         return base_value * weight
@@ -528,6 +534,12 @@ class LiveMapper:
         radius = self.obstacle_footprint_radius_cells
         if radius <= 0:
             radius = int(self.default_footprint_radius_by_label.get(label, 0))
+        
+        # IMPROVEMENT: "Social Distancing" Buffer
+        # If the object is a person, we give them an extra 20cm (2 cells) of space
+        if label == "person":
+            radius += 2
+            
         if not det or "bbox" not in det:
             return max(0, int(radius))
         x1, y1, x2, y2 = det["bbox"]
